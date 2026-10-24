@@ -1,0 +1,11 @@
+# dsh-zhihu-scroll 的 bundle patch —— 把「刷知乎」挂进 DSH 配置树。
+#
+# 约定（跟其它第三方插件一致）：
+#   · id 必须全局唯一，且与包名一致（`zhihu-scroll` → `dsh-zhihu-scroll`）；
+#   · name 指向包入口 index.js（宿主半端）；
+#   · package.json 里的 dsh.client 会让 DSH 把本包的 client.js 作为浏览器插件加载；
+#   · 「id:」那一行别写行尾注释，插件商城的预检按行抓值。
+
+- insert:
+    - id: zhihu-scroll
+      name: 'dsh-zhihu-scroll'

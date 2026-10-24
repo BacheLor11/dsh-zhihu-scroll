@@ -1,0 +1,59 @@
+{
+  "name": "dsh-zhihu-scroll",
+  "version": "0.3.2",
+  "description": "DSH 插件：每天替你刷一轮知乎 —— 按领域/来源/判断权重读回答、写月度文章；用浏览器登录态，不做任何互动",
+  "icon": "assets/icon.svg",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "zhihu",
+    "duty",
+    "daily-report"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "lib",
+    "prompts",
+    "assets",
+    "README.md",
+    "AGENTS.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "dsh": ">=0.2.1-rc.2",
+    "node": ">=22"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-plugins"
+      ]
+    }
+  },
+  "author": "BacheLor11",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BacheLor11/dsh-zhihu-scroll.git"
+  },
+  "homepage": "https://github.com/BacheLor11/dsh-zhihu-scroll#readme",
+  "bugs": {
+    "url": "https://github.com/BacheLor11/dsh-zhihu-scroll/issues"
+  }
+}
