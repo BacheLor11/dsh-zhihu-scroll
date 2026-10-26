@@ -116,7 +116,7 @@ test('status 初始形状', async () => {
   const { status, body } = await get('/api/zhihu-duty/status')
   assert.equal(status, 200)
   assert.equal(body.ok, true)
-  assert.equal(body.version, '0.3.2')
+  assert.equal(body.version, '0.3.3')
   assert.equal(body.cfg.perDay, 3)
   assert.equal(body.cfg.domains.ai, 4)
   assert.equal(body.cfg.sources.following, 4)
@@ -295,9 +295,29 @@ test('同一来源重复交不会重复计数', async () => {
   const save = tools.find((t) => t.name === 'zhihu_report_save')
   const item = { title: '一条值得读的回答', url: 'https://www.zhihu.com/question/1/answer/2', why: '重复', tier: 'must' }
   const r = await save.execute({ summary: '重复交', items: [item] })
-  assert.equal(r.saved, true)
+  assert.equal(r.saved, false)
+  assert.equal(r.blocked, 'duplicates')
   assert.equal(r.added, 0)
   assert.equal(r.picked, 1)
+  assert.equal(r.skipped.length, 1)
+})
+
+test('同问题不同回答、同日同作者都会被跳过', async () => {
+  const save = tools.find((t) => t.name === 'zhihu_report_save')
+  const sameQ = await save.execute({
+    summary: '同问题另一条',
+    items: [{ title: '同问题另一条回答', url: 'https://www.zhihu.com/question/1/answer/3', why: '重复问题', author: '李四' }],
+  })
+  assert.equal(sameQ.saved, false)
+  assert.equal(sameQ.blocked, 'duplicates')
+  assert.ok(sameQ.skipped.some((x) => x.reason === 'question' || x.reason === 'repeat'))
+
+  const sameA = await save.execute({
+    summary: '同作者',
+    items: [{ title: '同作者另一条', url: 'https://www.zhihu.com/question/2/answer/4', why: '重复作者', author: '张三' }],
+  })
+  assert.equal(sameA.saved, false)
+  assert.ok(sameA.skipped.some((x) => x.reason === 'author'))
 })
 
 test('每天额度满了，手动再交仍然增量写进月度文章', async () => {

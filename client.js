@@ -154,7 +154,7 @@ window.__ModuleLoader__.load({
       const [logs, setLogs] = useState(null)
       const [tests, setTests] = useState(null)
       const [cookieText, setCookieText] = useState('')
-      const [dailyDraft, setDailyDraft] = useState({ perDay: 3, candidates: 12, scheduleTimes: '' })
+      const [dailyDraft, setDailyDraft] = useState({ perDay: 3, candidates: 30, scheduleTimes: '' })
       const [prefsDraft, setPrefsDraft] = useState(null)
       const [homeDraft, setHomeDraft] = useState('')
       const [draftReady, setDraftReady] = useState(false)
@@ -405,7 +405,7 @@ window.__ModuleLoader__.load({
             persona: prefsDraft.persona,
             reportLevel: prefsDraft.reportLevel,
             perDay: Number(dailyDraft.perDay) || 0,
-            candidates: Number(dailyDraft.candidates) || 12,
+            candidates: Number(dailyDraft.candidates) || 30,
           }, true)
           setPrefsDraft(initPrefs(cfg))
           say('ok', '偏好已保存，下一轮生效')
@@ -525,12 +525,12 @@ window.__ModuleLoader__.load({
             h('div', null,
               h(Note, null, '每轮先捞多少条候选'),
               h('input', {
-                'data-zh-input': '', 'data-zh-num': '', type: 'number', min: 4, max: 30,
+                'data-zh-input': '', 'data-zh-num': '', type: 'number', min: 4, max: 200,
                 value: dailyDraft.candidates,
                 onChange: (e) => setDailyDraft((d) => ({ ...d, candidates: e.target.value })),
-                onBlur: () => patchCfg({ candidates: Number(dailyDraft.candidates) || 12 }, true).catch(() => {}),
+                onBlur: () => patchCfg({ candidates: Number(dailyDraft.candidates) || 30 }, true).catch(() => {}),
               }),
-              h(Note, null, '候选越多读得越久，12 条大约 1–3 分钟')),
+              h(Note, null, '实际至少 10×每天条数（perDay 10 → 100），上限 200；候选越多读得越久')),
             h('div', null,
               h(Note, null, '今天'),
               h('div', { 'data-zh-kv': '' }, h('b', null, `${todayCount} 条`), ` / 目标 ${cfg.perDay > 0 ? cfg.perDay : '不限（手动）'}`),

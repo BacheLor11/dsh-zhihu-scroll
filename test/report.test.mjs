@@ -4,8 +4,9 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  countPicked, listMonthDays, mergeDay, monthlyReportPath, normalizePicked, readDay,
-  readReport, recentPicked, renderMonthlyReport, renderReport, writeReport,
+  countPicked, itemKeyOf, listMonthDays, mergeDay, monthlyReportPath, normalizePicked,
+  questionKeyOf, readDay, readReport, recentPicked, renderMonthlyReport, renderReport, reportHistory,
+  writeReport,
 } from '../lib/report.mjs'
 import { ensureHome } from '../lib/state.mjs'
 
@@ -131,6 +132,40 @@ test('level=off 不写 md，但 JSON 还在', () => {
     assert.equal(wrote.skipped, true)
     assert.equal(wrote.file, '')
     assert.equal(countPicked(home, day), 1)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('报告历史：精确键、近 30 天问题、今天作者、近 7 天作者', () => {
+  const home = ensureHome(mkdtempSync(join(tmpdir(), 'zhihu-history-')))
+  try {
+    const today = '2026-10-24'
+    mergeDay(home, '2026-09-01', {
+      items: [{ title: '很久以前', url: 'https://www.zhihu.com/question/11/answer/1', why: '旧', author: '旧作者' }],
+    })
+    mergeDay(home, '2026-10-20', {
+      items: [{
+        title: '近几天', url: 'https://www.zhihu.com/question/22/answer/2', why: '近', author: '近作者',
+        related: [{ title: '相关', url: 'https://www.zhihu.com/question/22/answer/3' }],
+      }],
+    })
+    mergeDay(home, today, {
+      items: [{ title: '今天', url: 'https://www.zhihu.com/question/33/answer/4', why: '今', author: '今作者' }],
+    })
+    const h = reportHistory(home, today)
+    assert.ok(h.allKeys.has('https://www.zhihu.com/question/11/answer/1'))
+    assert.ok(h.allKeys.has('https://www.zhihu.com/question/22/answer/3'), 'related 也要进精确键')
+    assert.ok(h.recentQuestions.has('22'))
+    assert.ok(h.recentQuestions.has('33'))
+    assert.ok(!h.recentQuestions.has('11'), '超过 30 天的问题不再挡')
+    assert.ok(h.todayAuthors.has('今作者'))
+    assert.ok(!h.todayAuthors.has('近作者'))
+    assert.ok(h.recentAuthors.has('近作者'))
+    assert.ok(h.recentAuthors.has('今作者'))
+    assert.ok(!h.recentAuthors.has('旧作者'), '超过 7 天的作者不降权')
+    assert.equal(questionKeyOf({ url: 'https://www.zhihu.com/question/44/answer/5' }), '44')
+    assert.equal(itemKeyOf({ id: 'x' }), 'x')
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

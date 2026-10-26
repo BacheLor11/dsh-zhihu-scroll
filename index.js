@@ -20,7 +20,7 @@ import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
-  WINDOW_LABEL, currentWindow, dayKey, loadConfig, nextWindow, saveConfig,
+  WINDOW_LABEL, candidateTarget, currentWindow, dayKey, loadConfig, nextWindow, saveConfig,
 } from './lib/config.mjs'
 import { dueTimePoint, nextTimePoint } from './lib/schedule.mjs'
 import {
@@ -28,7 +28,8 @@ import {
   markSeen, maskCookie, readAuth, readJson, readState, tailLog, writeAuth, writeHomeLocation, writeJson, writeState,
 } from './lib/state.mjs'
 import {
-  countPicked, listDays, mergeDay, readDay, readReport, recentPicked, reportPath, writeReport,
+  countPicked, itemKeyOf, listDays, mergeDay, questionKeyOf, readDay, readReport, recentPicked,
+  reportHistory, reportPath, writeReport,
 } from './lib/report.mjs'
 import { ZhihuClient, ZhihuError, describeError } from './lib/zhihu.mjs'
 import { DOMAINS, QUALITY, SOURCES, labelOfDomain, labelOfSource, labelOfQuality } from './lib/domains.mjs'
@@ -291,7 +292,8 @@ export function apply(ctx) {
     name: 'zhihu_feed',
     description: '捞一轮知乎候选。默认**按设置里的来源权重**混合推荐流 / 热榜 / 关注动态 / 关注的人，'
       + '再按领域权重 + 关键词 + 互动量排序；只返回标题、摘要、来源、领域、分数，没有正文。\n'
-      + '判断一条值不值得读，必须再用 zhihu_item 读正文。',
+      + '判断一条值不值得读，必须再用 zhihu_item 读正文。\n'
+      + '默认候选目标是 max(candidates, 10 × 每天条数)，上限 200；不够用 page 继续翻。',
     parameters: {
       type: 'object',
       properties: {
@@ -300,17 +302,19 @@ export function apply(ctx) {
           enum: ['recommend', 'hot', 'following', 'followingUsers'],
           description: '只用某一个来源；不填 = 按权重混合（推荐）',
         },
-        limit: { type: 'integer', description: '捞几条（1–30，默认用设置里的候选数）' },
+        limit: { type: 'integer', description: '捞几条（1–200，默认按 10×每天条数自动算）' },
+        page: { type: 'integer', description: '第几页（1–10，默认 1；没合适的就翻页继续）' },
       },
       additionalProperties: false,
     },
     async execute(args) {
       return guard(async () => {
         refreshCfg()
-        const limit = Math.max(1, Math.min(30, Number(args.limit) || cfg.candidates))
+        const limit = Math.max(1, Math.min(200, Number(args.limit) || candidateTarget(cfg)))
+        const page = Math.max(1, Math.min(10, Number(args.page) || 1))
         const source = String(args.source || '')
         if (source) {
-          const items = await client.feed({ source, limit, followingUsers: cfg.followingUsers })
+          const items = await client.feed({ source, limit, page, followingUsers: cfg.followingUsers })
           return {
             mode: 'single-source',
             source,
@@ -322,9 +326,11 @@ export function apply(ctx) {
               : '关注的人：没指定，用你的关注列表。',
           }
         }
-        const r = await client.collect({ limit, cfg })
+        const r = await client.collect({ limit, cfg, page })
         return {
           mode: 'weighted',
+          page,
+          limit,
           count: r.items.length,
           items: r.items.map(compact),
           quotas: r.quotas.map(([id, q]) => ({ source: id, label: labelOfSource(id), quota: q })),
@@ -334,7 +340,7 @@ export function apply(ctx) {
             quality: cfg.quality,
           },
           errors: r.errors,
-          note: '领域权重只影响排序，不是硬过滤；来源权重决定名额。读正文再判断。',
+          note: `候选目标 ${limit}（至少 10×每天条数，page ${page}）；领域权重只影响排序，来源权重决定名额。没合适的用 page 继续翻，不要降标准。`,
         }
       })
     },
@@ -433,7 +439,8 @@ export function apply(ctx) {
     name: 'zhihu_report_save',
     description: '把这一轮挑出来的条目交上去（增量写进本月文章 + 计数）。**一轮只调一次**，交完就收尾。\n手动提交不受每天目标硬拦：超过 perDay 也会继续并入当月文章。\n'
       + '每条必须带 title / url / why；quote 可选但必须原文；tier = must | worth | fun。\n'
-      + '同问题下其他值得一起看的回答放进该条目的 related（最多 3 条），不要单独占主条目额度。'
+      + '同问题下其他值得一起看的回答放进该条目的 related（最多 3 条），不要单独占主条目额度。\n'
+      + '重复内容、30 天内出现过的问题、今天已经收过的同一作者会被跳过（skipped），不会写进文章；'
       + '一条都没挑到也要交空 items，并在 summary 里说明原因。',
     parameters: {
       type: 'object',
@@ -447,6 +454,7 @@ export function apply(ctx) {
               title: { type: 'string' },
               url: { type: 'string' },
               id: { type: 'string' },
+              questionId: { type: 'string', description: '同问题去重用的知乎问题 id（可选；能从 url 推出来）' },
               kind: { type: 'string', enum: ['answer', 'article', 'question'] },
               author: { type: 'string' },
               votes: { type: 'number' },
@@ -484,29 +492,70 @@ export function apply(ctx) {
         refreshCfg()
         const day = dayKey()
         const already = countPicked(home, day)
+        const rawItems = Array.isArray(args.items) ? args.items : []
+        const history = reportHistory(home, day)
+        const seen = new Set(history.allKeys)
+        const questions = new Set(history.recentQuestions)
+        const authors = new Set(history.todayAuthors)
+        const kept = []
+        const skipped = []
+        for (const raw of rawItems) {
+          const title = String(raw?.title ?? '').trim()
+          const key = itemKeyOf(raw)
+          if (key && seen.has(key)) { skipped.push({ title, reason: 'repeat' }); continue }
+          const q = questionKeyOf(raw)
+          if (q && questions.has(q)) { skipped.push({ title, reason: 'question' }); continue }
+          const author = String(raw?.author ?? '').trim()
+          if (author && authors.has(author)) { skipped.push({ title, reason: 'author' }); continue }
+          const relSeen = new Set()
+          const related = (Array.isArray(raw?.related) ? raw.related : []).filter((rel) => {
+            const rk = itemKeyOf(rel)
+            if (!rk || seen.has(rk) || relSeen.has(rk)) return false
+            relSeen.add(rk)
+            return true
+          })
+          kept.push({ ...raw, ...(related.length ? { related } : {}) })
+          if (key) seen.add(key)
+          if (q) questions.add(q)
+          if (author) authors.add(author)
+        }
+        if (rawItems.length > 0 && kept.length === 0) {
+          return {
+            saved: false,
+            blocked: 'duplicates',
+            added: 0,
+            picked: already,
+            perDay: cfg.perDay,
+            skipped,
+            hint: '全是重复内容/同问题/同日同作者，已全部跳过；换内容或用 page 继续翻，不要降标准。',
+          }
+        }
         // perDay 是「自动调度 + 章程」的目标，不是手动提交的硬闸：
         // 用户手动再跑一轮时，新条目要能继续增量并入月度文章，哪怕今天已超过额度。
         const { data, added } = mergeDay(home, day, {
           summary: String(args.summary || '').slice(0, 300),
-          items: Array.isArray(args.items) ? args.items : [],
+          items: kept,
           rounds: 1,
         })
         const wrote = writeReport(home, data, cfg.reportLevel)
         const fresh = data.items.slice(already)
         for (const it of fresh) if (it.id) markSeen(home, it.id, day)
         const overQuota = cfg.perDay > 0 ? Math.max(0, data.items.length - cfg.perDay) : 0
-        logger(`交报告：新增 ${added} 条，今天共 ${data.items.length} 条${overQuota ? `（超每日目标 ${overQuota} 条）` : ''}${wrote.file ? `，已写 ${wrote.file}` : ''}`)
+        logger(`交报告：新增 ${added} 条${skipped.length ? `，跳过 ${skipped.length} 条重复` : ''}，今天共 ${data.items.length} 条${overQuota ? `（超每日目标 ${overQuota} 条）` : ''}${wrote.file ? `，已写 ${wrote.file}` : ''}`)
         return {
           saved: true,
           added,
           picked: data.items.length,
           perDay: cfg.perDay,
           overQuota,
+          skipped,
           file: wrote.file || '',
           reportLevel: cfg.reportLevel,
           hint: added === 0
             ? '这次没有新增（可能都是今天挑过的）—— 如果是空 items，那就是如实交白卷。'
-            : (overQuota > 0 ? '今天已超过每天目标；手动交的条目已增量写进月度文章。' : ''),
+            : (skipped.length
+              ? `已跳过 ${skipped.length} 条重复/同问题/同作者，只写入新的。`
+              : (overQuota > 0 ? '今天已超过每天目标；手动交的条目已增量写进月度文章。' : '')),
         }
       })
     },
@@ -552,7 +601,7 @@ export function apply(ctx) {
     const picked = readDay(home, day)?.items || []
     const lines = [
       `今天是 ${day}。按值班章程刷一轮知乎。`,
-      `每天最多 ${cfg.perDay} 条；候选 ${cfg.candidates} 条。`,
+      `每天最多 ${cfg.perDay} 条；候选目标 ${candidateTarget(cfg)} 条（至少 10×每天条数）。`,
       `领域权重：${weightText(cfg.domains, labelOfDomain) || '没选（按中性判断）'}`,
       `来源权重：${weightText(cfg.sources, labelOfSource) || '没选（默认推荐流）'}`,
       `判断权重：${weightText(cfg.quality, labelOfQuality) || '没设（按中性判断）'}`,
@@ -563,7 +612,7 @@ export function apply(ctx) {
       picked.length
         ? `今天已经挑过（不要重复）：\n${picked.map((x, i) => `${i + 1}. ${x.title}`).join('\n')}`
         : '今天还没挑过。',
-      '现在开始：先调 zhihu_feed（不传 source，按权重捞），再逐条读正文，最后调一次 zhihu_report_save。',
+      '现在开始：先调 zhihu_feed（不传 source，按权重捞），再逐条读正文。没合适的就用 page 翻页/换来源继续捞，不要放宽标准；最后调一次 zhihu_report_save。',
     ]
     return lines.filter(Boolean).join('\n\n')
   }

@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ZhihuClient, allocateQuotas, normalizeHotItem, parseRef, webUrlOf } from '../lib/zhihu.mjs'
 import { ensureHome, writeAuth } from '../lib/state.mjs'
+import { dayKey } from '../lib/config.mjs'
+import { mergeDay } from '../lib/report.mjs'
 
 const home = ensureHome(mkdtempSync(join(tmpdir(), 'zhihu-client-')))
 let server
@@ -265,4 +267,24 @@ test('me 能读昵称', async () => {
 test('网络不通映射成 network', async () => {
   const c = new ZhihuClient({ home, base: 'http://127.0.0.1:1', gapMs: 0, timeoutMs: 800 })
   await assert.rejects(() => c.hot(1), (e) => e.code === 'network')
+})
+
+test('collect 过滤近期报告里的同问题/同作者内容', async () => {
+  const h = ensureHome(mkdtempSync(join(tmpdir(), 'zhihu-history-client-')))
+  try {
+    writeAuth(h, { cookie: 'z_c0=test; d_c0=test; _xsrf=xsrf', userAgent: 'zhihu-test', hasAuth: true, xsrf: 'xsrf' })
+    mergeDay(h, dayKey(), {
+      items: [
+        { title: '已收问题', url: 'https://www.zhihu.com/question/900/answer/999', why: 'x', author: '李四' },
+        { title: '已收作者', url: 'https://www.zhihu.com/question/901/answer/998', why: 'x', author: '张三' },
+      ],
+    })
+    const c = new ZhihuClient({ home: h, base, gapMs: 0, timeoutMs: 3000 })
+    const r = await c.collect({ limit: 5, cfg: { sources: { recommend: 1 }, domains: {}, keywords: [] } })
+    assert.equal(r.items.length, 0)
+    assert.ok(!r.items.some((x) => x.url.includes('/question/900/')))
+    assert.ok(!r.items.some((x) => x.author === '张三'))
+  } finally {
+    rmSync(h, { recursive: true, force: true })
+  }
 })

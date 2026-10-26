@@ -77,7 +77,7 @@ dsh plugin --profile desktop add <本仓库路径>
 ### 从 tgz 装（推荐分发用）
 
 ```bash
-dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.2.tgz
+dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.3.tgz
 ```
 
 装完**重启一次 DSH**（bundle 层要重启才组装）。然后进 **设置 → 刷知乎**。
@@ -203,6 +203,20 @@ out/大肥鱼带你刷知乎2026年10月.md
 - 每天的结构化数据仍在 `meta/<日期>.json`，卡片墙按天读它；
 - `out/<日期>.md` 是 0.2.7 及以前的旧文件，不再生成，留着当历史。
 
+## 去重与多样性
+
+- **同一条内容**（url/id）不会重复进主条目；`related` 里出现过的也算见过。
+- **同一个问题 30 天内**只收一次主条目；换一个回答也不收，避免「同一问题不同回答」反复占位。
+- **同一天同一作者最多 1 条主条目**；近 7 天出现过的作者在候选排序里降权。
+- 同一问题下的其他优质回答仍然可以放进主条目的 `related`，报告会把它们放在相邻位置。
+
+## 候选池
+
+- 目标候选数 = `max(candidates, 10 × perDay)`，上限 200：`perDay 10` → 100 条；
+- `zhihu_feed` 支持 `page`（1–10）；没选到合适的就翻页/换来源继续捞，
+  **不要为了凑数放宽标准**；
+- 抓候选时就会先过滤掉近 30 天同问题、今天同作者、历史同内容。
+
 ## 数据目录
 
 默认是 `$DSH_HOME/zhihu-duty/`（`~/.dsh/zhihu-duty/`）。可以改：
@@ -277,7 +291,7 @@ NODE="/path/to/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"
 ELECTRON_RUN_AS_NODE=1 "$NODE" --expose-internals --test test/*.test.mjs
 ```
 
-测试覆盖：60 个用例 —— Cookie 解析、HTML→文本、领域/权重、月度文章合并/渲染、精确时间点调度、
+测试覆盖：64 个用例 —— Cookie 解析、HTML→文本、领域/权重、月度文章合并/渲染、精确时间点调度、
 同问题关联回答、知乎客户端（本地 mock 服务）、宿主工具与 HTTP 接口、数据目录指针/切换。
 
 临时实例（不碰你的 `~/.dsh`）：
@@ -285,7 +299,7 @@ ELECTRON_RUN_AS_NODE=1 "$NODE" --expose-internals --test test/*.test.mjs
 ```bash
 export DSH_HOME="$PWD/.dsh-test"
 dsh --profile web --dump-config
-dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.2.tgz"
+dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.3.tgz"
 dsh web --port 0 --no-open
 ```
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { DEFAULT_CONFIG, sanitizeConfig } from '../lib/config.mjs'
+import { DEFAULT_CONFIG, candidateTarget, sanitizeConfig } from '../lib/config.mjs'
 
 test('默认配置有完整的偏好模型，没有互动字段', () => {
   const c = sanitizeConfig(DEFAULT_CONFIG)
@@ -54,10 +54,18 @@ test('数字范围', () => {
   assert.equal(sanitizeConfig({ perDay: 99 }).perDay, 20)
   assert.equal(sanitizeConfig({ perDay: -1 }).perDay, 0)
   assert.equal(sanitizeConfig({ candidates: 1 }).candidates, 4)
-  assert.equal(sanitizeConfig({ candidates: 99 }).candidates, 30)
+  assert.equal(sanitizeConfig({ candidates: 99 }).candidates, 99)
 })
 
 test('时间点去重、排序、认 8:30、丢掉 24:00', () => {
   const c = sanitizeConfig({ scheduleTimes: ['21:15', '8:30', '08:30', '12:30', '24:00', '9:7', 'bad'] })
   assert.deepEqual(c.scheduleTimes, ['00:00', '08:30', '12:30', '21:15'])
+})
+
+test('候选目标至少 10×每天条数，上限 200', () => {
+  assert.equal(candidateTarget({ perDay: 10, candidates: 30 }), 100)
+  assert.equal(candidateTarget({ perDay: 3, candidates: 12 }), 30)
+  assert.equal(candidateTarget({ perDay: 0, candidates: 30 }), 30)
+  assert.equal(candidateTarget({ perDay: 20, candidates: 200 }), 200)
+  assert.equal(sanitizeConfig({ candidates: 999 }).candidates, 200)
 })

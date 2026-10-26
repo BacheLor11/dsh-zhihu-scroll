@@ -13,7 +13,7 @@
    DSH="/path/to/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
    "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll
    # 或
-   "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll-0.3.2.tgz
+   "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll-0.3.3.tgz
    ```
 
    - web profile 把 `desktop` 换成 `web`；
@@ -53,7 +53,7 @@
 - `client.js` —— 浏览器半端：设置页（`settings.section`，id `zhihu-scroll`），日常/偏好/账号/高级
 - `lib/zhihu.mjs` —— Cookie 解析 / 请求 / 热榜（新 `title_area` 结构）/推荐/关注 / 正文 / 评论 / 关注列表 / 加权 collect
 - `lib/domains.mjs` —— 16 个领域 + 来源/判断目录 + 权重匹配
-- `lib/report.mjs` —— 月度文章 Markdown（`out/大肥鱼带你刷知乎YYYY年M月.md`）+ 每日 JSON；合并、计数、卡片墙；主条目带 `related`
+- `lib/report.mjs` —— 月度文章 Markdown + 每日 JSON；合并、计数、卡片墙；`reportHistory` 提供同内容/30 天同问题/当日同作者索引；主条目带 `related`
 - `lib/config.mjs` —— 配置默认值/迁移/清洗/窗口
 - `lib/schedule.mjs` —— 精确时间点：归一化、下一次、到点/10 分钟补跑
 - `lib/state.mjs` —— 数据目录指针、日志、状态、凭证、章程账本
@@ -67,6 +67,8 @@
 - 文章是**月度文件**，每天增量并入，最新一天在最前；`out/<日期>.md` 不再生成；
 - `perDay` 只用于自动调度/章程目标；`zhihu_report_save` **不按额度硬拦**，手动超额度也要继续并入；
 - 定时支持精确时间点（`scheduleTimes`，HH:mm，最多 12 个）；留空才走旧的午间/夜间窗口；
+- 候选目标 `max(candidates, 10×perDay)`，上限 200；`zhihu_feed` 支持 `page`；
+- 去重：同内容（含 related）永久、同问题 30 天、同日同作者 1 条；`zhihu_report_save` 会跳过并返回 `skipped`；
 - 工具参数 schema 只能使用 DSH 支持的 JSON Schema 子集：
   `type/oneOf/properties/required/additionalProperties/items/enum/const` + 注解；
   **别用** `minimum` / `maximum` / `maxItems`（宿主的 `assertSupportedJsonSchema` 会拒收，
