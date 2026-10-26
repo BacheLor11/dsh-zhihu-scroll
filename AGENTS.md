@@ -13,7 +13,7 @@
    DSH="/path/to/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
    "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll
    # 或
-   "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll-0.3.3.tgz
+   "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll-0.3.4.tgz
    ```
 
    - web profile 把 `desktop` 换成 `web`；
@@ -65,6 +65,7 @@
 
 - 运行数据默认在 `$DSH_HOME/zhihu-duty/`，可在设置页改成别的目录；**不写进插件包目录**；
 - 文章是**月度文件**，每天增量并入，最新一天在最前；`out/<日期>.md` 不再生成；
+- 旧日期区块一旦写入就不再重写（`preserveOldMonthly`），只重写当天/新增日期；
 - `perDay` 只用于自动调度/章程目标；`zhihu_report_save` **不按额度硬拦**，手动超额度也要继续并入；
 - 定时支持精确时间点（`scheduleTimes`，HH:mm，最多 12 个）；留空才走旧的午间/夜间窗口；
 - 候选目标 `max(candidates, 10×perDay)`，上限 200；`zhihu_feed` 支持 `page`；

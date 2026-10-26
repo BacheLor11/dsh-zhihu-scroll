@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -166,6 +166,30 @@ test('报告历史：精确键、近 30 天问题、今天作者、近 7 天作�
     assert.ok(!h.recentAuthors.has('旧作者'), '超过 7 天的作者不降权')
     assert.equal(questionKeyOf({ url: 'https://www.zhihu.com/question/44/answer/5' }), '44')
     assert.equal(itemKeyOf({ id: 'x' }), 'x')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('写月度文章保留以前日期的旧区块', () => {
+  const home = ensureHome(mkdtempSync(join(tmpdir(), 'zhihu-preserve-')))
+  try {
+    mergeDay(home, '2026-10-22', { items: [{ title: '十月二十二', url: 'https://a/22', why: '旧', tier: 'worth' }] })
+    writeReport(home, readDay(home, '2026-10-22'), 'full')
+    mergeDay(home, '2026-10-23', { items: [{ title: '十月二十三', url: 'https://a/23', why: '旧', tier: 'worth' }] })
+    writeReport(home, readDay(home, '2026-10-23'), 'full')
+    const file = monthlyReportPath(home, '2026-10-23')
+    const before = readFileSync(file, 'utf8')
+    const marked = before.replace('## 2026-10-22', '## 2026-10-22\n\n<!-- 旧内容手写 -->')
+    writeFileSync(file, marked, 'utf8')
+
+    mergeDay(home, '2026-10-24', { items: [{ title: '十月二十四', url: 'https://a/24', why: '新', tier: 'must' }] })
+    writeReport(home, readDay(home, '2026-10-24'), 'full')
+    const after = readFileSync(file, 'utf8')
+    assert.match(after, /## 2026-10-24/)
+    assert.match(after, /<!-- 旧内容手写 -->/, '旧日期区块必须原样保留')
+    assert.match(after, /十月二十二/)
+    assert.match(after, /十月二十四/)
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

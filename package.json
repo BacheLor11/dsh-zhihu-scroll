@@ -1,6 +1,6 @@
 {
   "name": "dsh-zhihu-scroll",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "DSH 插件：每天替你刷一轮知乎 —— 按领域/来源/判断权重读回答、写月度文章；用浏览器登录态，不做任何互动",
   "icon": "assets/icon.svg",
   "keywords": [

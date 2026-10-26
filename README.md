@@ -77,7 +77,7 @@ dsh plugin --profile desktop add <本仓库路径>
 ### 从 tgz 装（推荐分发用）
 
 ```bash
-dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.3.tgz
+dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.4.tgz
 ```
 
 装完**重启一次 DSH**（bundle 层要重启才组装）。然后进 **设置 → 刷知乎**。
@@ -198,6 +198,7 @@ out/大肥鱼带你刷知乎2026年10月.md
 
 - 每天一个 `## 2026-10-24` 分区，**最新的一天排在最前面**；
 - 同一天多次手动跑，新条目按 `addedAt` 倒序并入当天分区，**不覆盖旧条目**；
+- **已经写过的旧日期区块不再重写**：只重写当天和新增日期，旧内容（包括你手改的备注）原样保留；
 - 每天额度是自动调度/章程的目标，**不是手动提交的硬闸**：`zhihu_report_save` 不再按 `perDay` 拦截，超出的条目也会并入当月文章；
 - 整篇每次从 `meta/<日期>.json` 重建，旧内容不丢、不重复；
 - 每天的结构化数据仍在 `meta/<日期>.json`，卡片墙按天读它；
@@ -291,7 +292,7 @@ NODE="/path/to/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"
 ELECTRON_RUN_AS_NODE=1 "$NODE" --expose-internals --test test/*.test.mjs
 ```
 
-测试覆盖：64 个用例 —— Cookie 解析、HTML→文本、领域/权重、月度文章合并/渲染、精确时间点调度、
+测试覆盖：65 个用例 —— Cookie 解析、HTML→文本、领域/权重、月度文章合并/渲染、精确时间点调度、
 同问题关联回答、知乎客户端（本地 mock 服务）、宿主工具与 HTTP 接口、数据目录指针/切换。
 
 临时实例（不碰你的 `~/.dsh`）：
@@ -299,7 +300,7 @@ ELECTRON_RUN_AS_NODE=1 "$NODE" --expose-internals --test test/*.test.mjs
 ```bash
 export DSH_HOME="$PWD/.dsh-test"
 dsh --profile web --dump-config
-dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.3.tgz"
+dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.4.tgz"
 dsh web --port 0 --no-open
 ```
 
