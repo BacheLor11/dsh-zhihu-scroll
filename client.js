@@ -322,7 +322,7 @@ window.__ModuleLoader__.load({
         } catch {
           return say('err', '浏览器没给剪贴板权限。展开下面的「手动粘贴」把 cURL 粘进来，或允许剪贴板权限后重试。')
         }
-        if (!text.trim()) return say('err', '剪贴板是空的：先在 www.zhihu.com 的 DevTools 里 Copy as cURL（必须选 www.zhihu.com 的请求）')
+        if (!text.trim()) return say('err', '剪贴板是空的：先在 www.zhihu.com 的 DevTools 里 Copy as cURL（必须选 Request URL 为 https://www.zhihu.com 的页面请求）')
         await importCookie(text)
       }
 
@@ -644,7 +644,7 @@ window.__ModuleLoader__.load({
           st.auth.savedAt ? ` · ${fmtTime(st.auth.savedAt)}` : '',
           st.auth.source && st.auth.source !== 'paste' ? ' · 旧版登录' : '',
         ]
-        : '还没登录。用下面的「从剪贴板导入」：浏览器登录 www.zhihu.com → 选一条 www.zhihu.com 的请求 Copy as cURL → 粘进来。'
+        : '还没登录。用下面的「从剪贴板导入」：浏览器登录 www.zhihu.com → 选地址栏那条 https://www.zhihu.com 的请求 Copy as cURL → 粘进来。'
 
       const accountCard = h(Section, { title: '知乎账号' },
         h('div', { 'data-zh-kv': '' }, authLine),
@@ -656,11 +656,13 @@ window.__ModuleLoader__.load({
 
       const clipboardCard = h(Section, { title: '从剪贴板导入（传统方式）' },
         h('div', { 'data-zh-step': '' },
-          '1. 在浏览器里打开知乎（确保已登录）→ F12 → Network；',
+          '1. 在浏览器里打开 https://www.zhihu.com（确保已登录）→ F12 → Network；',
           h('br'),
-          '2. 随便点一条 zhihu.com/api/... 请求，右键 → Copy → Copy as cURL；',
+          '2. 刷新后找一条 Request URL 为 https://www.zhihu.com 的请求（无任何后缀），右键 → Copy → Copy as cURL；',
           h('br'),
-          '3. 回到这里点「从剪贴板导入」；没给剪贴板权限就展开下面手动粘贴。'),
+          '3. 也就是页面本身那条 Document 请求；不要选带 /api/... 路径、查询参数的请求，也不要选 zhihu.com、zhihu-web-analytics.zhihu.com、apm.zhihu.com 等子域；',
+          h('br'),
+          '4. 回到这里点「从剪贴板导入」；没给剪贴板权限就展开下面手动粘贴。'),
         h('div', { 'data-zh-row': '' },
           h('button', { 'data-zh-btn': '', 'data-primary': '', onClick: importClipboard }, '从剪贴板导入'),
           h('button', { 'data-zh-btn': '', onClick: testConnection, disabled: busy === 'test' },
@@ -670,7 +672,7 @@ window.__ModuleLoader__.load({
           h('div', { style: { marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' } },
             h('textarea', {
               'data-zh-input': '', rows: 5,
-              placeholder: "curl 'https://www.zhihu.com/api/v3/...' \\\n  -H 'cookie: z_c0=...; d_c0=...' \\\n  -H 'user-agent: Mozilla/5.0 ...'",
+              placeholder: "curl 'https://www.zhihu.com/' \\\n  -H 'cookie: z_c0=...; d_c0=...' \\\n  -H 'user-agent: Mozilla/5.0 ...'",
               value: cookieText,
               onChange: (e) => setCookieText(e.target.value),
             }),

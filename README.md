@@ -77,7 +77,7 @@ dsh plugin --profile desktop add <本仓库路径>
 ### 从 tgz 装（推荐分发用）
 
 ```bash
-dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.5.tgz
+dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.6.tgz
 ```
 
 装完**重启一次 DSH**（bundle 层要重启才组装）。然后进 **设置 → 刷知乎**。
@@ -91,8 +91,8 @@ dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.5.tgz
 
 1. 浏览器打开知乎，确保已登录；
 2. 按 `F12` → **Network**；
-3. 刷新后找一条 **Request URL 以 `https://www.zhihu.com/` 开头**的请求（如 `www.zhihu.com/api/...`）→ 右键 → **Copy → Copy as cURL**。
-   **别选** `zhihu.com`、`zhihu-web-analytics.zhihu.com`、`apm.zhihu.com` 等子域的请求，那些可能不带登录 Cookie；
+3. 刷新后找一条 **Request URL 为 `https://www.zhihu.com`** 的请求（**无任何后缀**，也就是页面本身的 Document 请求）→ 右键 → **Copy → Copy as cURL**。
+   不要选带 `/api/...` 路径或查询参数的请求，也不要选 `zhihu.com`、`zhihu-web-analytics.zhihu.com`、`apm.zhihu.com` 等子域——那些可能不带登录 Cookie；
 4. 回到 **设置 → 刷知乎 → 账号**，点 **从剪贴板导入**；
    - 浏览器没给剪贴板权限时，展开 **手动粘贴 cURL / Cookie**，把整段粘进去 → 保存；
 5. 点 **测一下**：会逐项测热榜、推荐流、关注动态、关注列表、正文接口。
@@ -301,7 +301,7 @@ ELECTRON_RUN_AS_NODE=1 "$NODE" --expose-internals --test test/*.test.mjs
 ```bash
 export DSH_HOME="$PWD/.dsh-test"
 dsh --profile web --dump-config
-dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.5.tgz"
+dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.6.tgz"
 dsh web --port 0 --no-open
 ```
 
