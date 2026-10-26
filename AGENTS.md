@@ -13,7 +13,7 @@
    DSH="/path/to/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
    "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll
    # 或
-   "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll-0.3.4.tgz
+   "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll-0.3.5.tgz
    ```
 
    - web profile 把 `desktop` 换成 `web`；
@@ -21,8 +21,10 @@
 
 3. **必须提醒用户重启一次 DSH**（bundle 层要重启才组装）。
 4. 重启后让用户进 **设置 → 刷知乎 → 账号**：
-   - 传统方式：用户在浏览器登录知乎 → `F12 → Network → Copy as cURL` →
+   - 传统方式：用户在浏览器登录 **www.zhihu.com** → `F12 → Network` →
+     选一条 **Request URL 以 `https://www.zhihu.com/` 开头**的请求 → `Copy as cURL` →
      回到设置页点「从剪贴板导入」（没权限就展开「手动粘贴」）；
+     不要选 `zhihu.com` / `zhihu-web-analytics.zhihu.com` / `apm.zhihu.com` 等子域；
    - **不要**让用户把 Cookie 贴到聊天里；也不要建议扫码/短信/密码登录（这一版不做）；
    - 保存后点「测一下」，再看 **偏好** 调权重；
    - 手动跑就在对话里说「刷一轮知乎」；**定时**要先在自动值班里选一个专门刷知乎的对话、

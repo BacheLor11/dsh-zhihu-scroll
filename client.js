@@ -322,7 +322,7 @@ window.__ModuleLoader__.load({
         } catch {
           return say('err', '浏览器没给剪贴板权限。展开下面的「手动粘贴」把 cURL 粘进来，或允许剪贴板权限后重试。')
         }
-        if (!text.trim()) return say('err', '剪贴板是空的：先在知乎 DevTools 里 Copy as cURL')
+        if (!text.trim()) return say('err', '剪贴板是空的：先在 www.zhihu.com 的 DevTools 里 Copy as cURL（必须选 www.zhihu.com 的请求）')
         await importCookie(text)
       }
 
@@ -644,7 +644,7 @@ window.__ModuleLoader__.load({
           st.auth.savedAt ? ` · ${fmtTime(st.auth.savedAt)}` : '',
           st.auth.source && st.auth.source !== 'paste' ? ' · 旧版登录' : '',
         ]
-        : '还没登录。用下面的「从剪贴板导入」：浏览器登录知乎 → Copy as cURL → 粘进来。'
+        : '还没登录。用下面的「从剪贴板导入」：浏览器登录 www.zhihu.com → 选一条 www.zhihu.com 的请求 Copy as cURL → 粘进来。'
 
       const accountCard = h(Section, { title: '知乎账号' },
         h('div', { 'data-zh-kv': '' }, authLine),
