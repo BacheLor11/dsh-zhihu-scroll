@@ -116,7 +116,7 @@ test('status 初始形状', async () => {
   const { status, body } = await get('/api/zhihu-duty/status')
   assert.equal(status, 200)
   assert.equal(body.ok, true)
-  assert.equal(body.version, '0.3.6')
+  assert.equal(body.version, '0.3.7')
   assert.equal(body.cfg.perDay, 3)
   assert.equal(body.cfg.domains.ai, 4)
   assert.equal(body.cfg.sources.following, 4)
@@ -338,6 +338,35 @@ test('每天额度满了，手动再交仍然增量写进月度文章', async ()
   assert.equal(r.overQuota, 1)
   const rep = await get('/api/zhihu-duty/report')
   assert.match(rep.body.text, /超额的一条/)
+})
+
+test('回答只用问题链接时自动补成回答链接', async () => {
+  const save = tools.find((t) => t.name === 'zhihu_report_save')
+  const r = await save.execute({
+    summary: '补回答链接',
+    items: [{
+      title: '补回答链接', url: 'https://www.zhihu.com/question/777',
+      id: '888', kind: 'answer', why: '回答', author: '补链接作者',
+    }],
+  })
+  assert.equal(r.saved, true)
+  assert.equal(r.added, 1)
+  const rep = await get('/api/zhihu-duty/report')
+  assert.match(rep.body.text, /https:\/\/www\.zhihu\.com\/question\/777\/answer\/888/)
+})
+
+test('回答只有问题链接且没有回答 id 会被拦下', async () => {
+  const save = tools.find((t) => t.name === 'zhihu_report_save')
+  const r = await save.execute({
+    summary: '缺回答链接',
+    items: [{
+      title: '缺回答链接', url: 'https://www.zhihu.com/question/778',
+      id: '778', kind: 'answer', why: '没有回答 id', author: '缺链接作者',
+    }],
+  })
+  assert.equal(r.saved, false)
+  assert.equal(r.blocked, 'invalid')
+  assert.ok(r.skipped.some((x) => x.reason === 'answer_url'))
 })
 
 test('状态里带精确时间点模式和下一次', async () => {

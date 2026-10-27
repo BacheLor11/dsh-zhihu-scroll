@@ -194,3 +194,22 @@ test('写月度文章保留以前日期的旧区块', () => {
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+test('提问者/答主/作者标签按 kind 分开', () => {
+  const home = ensureHome(mkdtempSync(join(tmpdir(), 'zhihu-bylines-')))
+  try {
+    mergeDay(home, '2026-10-27', {
+      items: [
+        { title: '一个普通问题', url: 'https://www.zhihu.com/question/101', why: '问题', kind: 'question', author: '提问的人' },
+        { title: '一个高赞回答', url: 'https://www.zhihu.com/question/101/answer/102', why: '回答', kind: 'answer', author: '答主的人' },
+        { title: '一篇专栏文章', url: 'https://zhuanlan.zhihu.com/p/103', why: '文章', kind: 'article', author: '写文章的人' },
+      ],
+    })
+    const text = renderMonthlyReport(home, '2026-10-27', 'full')
+    assert.match(text, /提问者：提问的人/)
+    assert.match(text, /答主：答主的人/)
+    assert.match(text, /作者：写文章的人/)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})

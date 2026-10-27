@@ -31,7 +31,7 @@ import {
   countPicked, itemKeyOf, listDays, mergeDay, questionKeyOf, readDay, readReport, recentPicked,
   reportHistory, reportPath, writeReport,
 } from './lib/report.mjs'
-import { ZhihuClient, ZhihuError, describeError } from './lib/zhihu.mjs'
+import { ZhihuClient, ZhihuError, describeError, webUrlOf } from './lib/zhihu.mjs'
 import { DOMAINS, QUALITY, SOURCES, labelOfDomain, labelOfSource, labelOfQuality } from './lib/domains.mjs'
 
 const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
@@ -273,6 +273,7 @@ export function apply(ctx) {
   const compact = (it) => ({
     id: it.id,
     kind: it.kind,
+    questionId: it.questionId || '',
     title: trim(it.title, 160),
     question: trim(it.question, 160),
     author: it.author,
@@ -287,6 +288,51 @@ export function apply(ctx) {
     score: it.score,
     fromCache: it.fromCache || false,
   })
+
+  /**
+   * 纠正「回答却拿问题链接」：
+   * - kind=answer + 问题 url + 有回答 id → 补成 /question/{qid}/answer/{aid}
+   * - kind=question + 回答 url → 反向纠正成 answer
+   * - kind=answer + 问题 url 且 id 就是问题 id → 没有回答 id，拦下（answer_url）
+   */
+  const canonicalReportItem = (raw) => {
+    if (!raw || typeof raw !== 'object') return { reason: 'invalid' }
+    let kind = ['answer', 'article', 'question'].includes(raw.kind) ? raw.kind : ''
+    const url = String(raw.url || '').trim()
+    let id = String(raw.id || '').trim()
+    let qid = String(raw.questionId || '').trim()
+    const title = String(raw.title || '').trim()
+    const ans = url.match(/zhihu\.com\/question\/(\d+)\/answer\/(\d+)/i)
+    const qonly = url.match(/zhihu\.com\/question\/(\d+)\/?(?:[?#].*)?$/i)
+    const aonly = url.match(/zhihu\.com\/answer\/(\d+)/i)
+    const ponly = url.match(/(?:zhuanlan\.)?zhihu\.com\/p\/(\d+)/i)
+    if (ans) {
+      kind = 'answer'; qid = ans[1]; id = ans[2]
+      return { item: { ...raw, kind, id, questionId: qid, url: `https://www.zhihu.com/question/${qid}/answer/${id}` } }
+    }
+    if (aonly) {
+      kind = 'answer'; id = aonly[1]
+      return { item: { ...raw, kind, id, questionId: qid, url: `https://www.zhihu.com/answer/${id}` } }
+    }
+    if (ponly) {
+      kind = 'article'; id = ponly[1]
+      return { item: { ...raw, kind, id, questionId: '', url: `https://zhuanlan.zhihu.com/p/${id}` } }
+    }
+    if (qonly) {
+      const q = qonly[1]
+      if (kind === 'answer') {
+        if (id && id !== q) {
+          qid = q
+          return { item: { ...raw, kind: 'answer', id, questionId: qid, url: `https://www.zhihu.com/question/${q}/answer/${id}` } }
+        }
+        return { reason: 'answer_url', title }
+      }
+      kind = 'question'; id = q; qid = q
+      return { item: { ...raw, kind, id, questionId: qid, url: `https://www.zhihu.com/question/${q}` } }
+    }
+    if (kind === 'answer') return { reason: 'answer_url', title }
+    return { item: { ...raw, kind: kind || 'answer', id, questionId: qid } }
+  }
 
   registerTool({
     name: 'zhihu_feed',
@@ -365,8 +411,9 @@ export function apply(ctx) {
 
   registerTool({
     name: 'zhihu_item',
-    description: '读一条知乎内容的正文：回答给全文，文章给全文，问题给前 3 条高赞回答。\n'
+    description: '读一条知乎内容的正文：回答给全文，文章给全文，问题给前 3 条高赞回答（answers 里带每条回答的 url）。\n'
       + '⭐ 判断内容只靠这个工具，不看摘要。返回里会区分「正文」和「只有摘要」。\n'
+      + '从问题页里挑回答时，用 answers[].url 交 kind=answer；不要把回答挂在问题链接下。\n'
       + 'ref 可以传：回答/问题/文章链接，或 `answer:123` / `question:456` / `p:789`。',
     parameters: {
       type: 'object',
@@ -403,6 +450,8 @@ export function apply(ctx) {
             answers: Array.isArray(full.answers)
               ? full.answers.map((a) => ({
                 id: a.id, author: a.author, votes: a.votes, comments: a.comments,
+                questionId: full.questionId || '',
+                url: webUrlOf('answer', a.id, full.questionId),
                 content: trim(a.content, Math.max(1500, Math.floor(max / 2))),
               }))
               : undefined,
@@ -441,6 +490,7 @@ export function apply(ctx) {
       + '每条必须带 title / url / why；quote 可选但必须原文；tier = must | worth | fun。\n'
       + '同问题下其他值得一起看的回答放进该条目的 related（最多 3 条），不要单独占主条目额度。\n'
       + '重复内容、30 天内出现过的问题、今天已经收过的同一作者会被跳过（skipped），不会写进文章；'
+      + 'kind=answer 必须给回答链接（含 /answer/{id}），kind=question 才是问题链接；回答只给问题链接会被拦下。'
       + '一条都没挑到也要交空 items，并在 summary 里说明原因。',
     parameters: {
       type: 'object',
@@ -493,13 +543,19 @@ export function apply(ctx) {
         const day = dayKey()
         const already = countPicked(home, day)
         const rawItems = Array.isArray(args.items) ? args.items : []
+        const skipped = []
+        const prepared = []
+        for (const raw of rawItems) {
+          const c = canonicalReportItem(raw)
+          if (c.reason) skipped.push({ title: String(raw?.title || '').trim(), reason: c.reason })
+          else prepared.push(c.item)
+        }
         const history = reportHistory(home, day)
         const seen = new Set(history.allKeys)
         const questions = new Set(history.recentQuestions)
         const authors = new Set(history.todayAuthors)
         const kept = []
-        const skipped = []
-        for (const raw of rawItems) {
+        for (const raw of prepared) {
           const title = String(raw?.title ?? '').trim()
           const key = itemKeyOf(raw)
           if (key && seen.has(key)) { skipped.push({ title, reason: 'repeat' }); continue }
@@ -520,14 +576,17 @@ export function apply(ctx) {
           if (author) authors.add(author)
         }
         if (rawItems.length > 0 && kept.length === 0) {
+          const invalid = skipped.some((x) => x.reason === 'answer_url' || x.reason === 'invalid')
           return {
             saved: false,
-            blocked: 'duplicates',
+            blocked: invalid ? 'invalid' : 'duplicates',
             added: 0,
             picked: already,
             perDay: cfg.perDay,
             skipped,
-            hint: '全是重复内容/同问题/同日同作者，已全部跳过；换内容或用 page 继续翻，不要降标准。',
+            hint: invalid
+              ? '有回答没带回答链接（只有问题链接又没有回答 id），已跳过；用 zhihu_item 的 answers[].url 重新交，或改用 kind=question 交问题本身。'
+              : '全是重复内容/同问题/同日同作者，已全部跳过；换内容或用 page 继续翻，不要降标准。',
           }
         }
         // perDay 是「自动调度 + 章程」的目标，不是手动提交的硬闸：

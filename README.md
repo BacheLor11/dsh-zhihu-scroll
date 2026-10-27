@@ -77,7 +77,7 @@ dsh plugin --profile desktop add <本仓库路径>
 ### 从 tgz 装（推荐分发用）
 
 ```bash
-dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.6.tgz
+dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.7.tgz
 ```
 
 装完**重启一次 DSH**（bundle 层要重启才组装）。然后进 **设置 → 刷知乎**。
@@ -205,6 +205,13 @@ out/大肥鱼带你刷知乎2026年10月.md
 - 每天的结构化数据仍在 `meta/<日期>.json`，卡片墙按天读它；
 - `out/<日期>.md` 是 0.2.7 及以前的旧文件，不再生成，留着当历史。
 
+## 回答链接
+
+- 报告里的条目如果来自某个回答，`kind` 必须是 `answer`，`url` 必须是 `https://www.zhihu.com/question/{qid}/answer/{aid}`；
+- 问题页的 `zhihu_item` 返回里，`answers[]` 现在带每条回答的 `url`，挑回答时直接用它；
+- 只给问题链接、又没有回答 id 的「回答」会被 `zhihu_report_save` 拦下（`answer_url`），不会写成问题链接；
+- 问题本身才用 `kind: question`；报告里的作者标签对应为「提问者 / 答主 / 作者」。
+
 ## 去重与多样性
 
 - **同一条内容**（url/id）不会重复进主条目；`related` 里出现过的也算见过。
@@ -293,7 +300,7 @@ NODE="/path/to/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"
 ELECTRON_RUN_AS_NODE=1 "$NODE" --expose-internals --test test/*.test.mjs
 ```
 
-测试覆盖：65 个用例 —— Cookie 解析、HTML→文本、领域/权重、月度文章合并/渲染、精确时间点调度、
+测试覆盖：68 个用例 —— Cookie 解析、HTML→文本、领域/权重、月度文章合并/渲染、精确时间点调度、
 同问题关联回答、知乎客户端（本地 mock 服务）、宿主工具与 HTTP 接口、数据目录指针/切换。
 
 临时实例（不碰你的 `~/.dsh`）：
@@ -301,7 +308,7 @@ ELECTRON_RUN_AS_NODE=1 "$NODE" --expose-internals --test test/*.test.mjs
 ```bash
 export DSH_HOME="$PWD/.dsh-test"
 dsh --profile web --dump-config
-dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.6.tgz"
+dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.7.tgz"
 dsh web --port 0 --no-open
 ```
 

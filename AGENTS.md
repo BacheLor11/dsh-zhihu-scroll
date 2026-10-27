@@ -13,7 +13,7 @@
    DSH="/path/to/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
    "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll
    # 或
-   "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll-0.3.6.tgz
+   "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll-0.3.7.tgz
    ```
 
    - web profile 把 `desktop` 换成 `web`；
@@ -72,6 +72,7 @@
 - 定时支持精确时间点（`scheduleTimes`，HH:mm，最多 12 个）；留空才走旧的午间/夜间窗口；
 - 候选目标 `max(candidates, 10×perDay)`，上限 200；`zhihu_feed` 支持 `page`；
 - 去重：同内容（含 related）永久、同问题 30 天、同日同作者 1 条；`zhihu_report_save` 会跳过并返回 `skipped`；
+- 回答必须用 `/answer/{id}` 链接；问题页 `answers[]` 带 `url`；回答只给问题链接会被拦下（`answer_url`）；
 - 工具参数 schema 只能使用 DSH 支持的 JSON Schema 子集：
   `type/oneOf/properties/required/additionalProperties/items/enum/const` + 注解；
   **别用** `minimum` / `maximum` / `maxItems`（宿主的 `assertSupportedJsonSchema` 会拒收，
