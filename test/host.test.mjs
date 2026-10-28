@@ -116,7 +116,7 @@ test('status 初始形状', async () => {
   const { status, body } = await get('/api/zhihu-duty/status')
   assert.equal(status, 200)
   assert.equal(body.ok, true)
-  assert.equal(body.version, '0.3.7')
+  assert.equal(body.version, '0.3.8')
   assert.equal(body.cfg.perDay, 3)
   assert.equal(body.cfg.domains.ai, 4)
   assert.equal(body.cfg.sources.following, 4)
@@ -367,6 +367,36 @@ test('回答只有问题链接且没有回答 id 会被拦下', async () => {
   assert.equal(r.saved, false)
   assert.equal(r.blocked, 'invalid')
   assert.ok(r.skipped.some((x) => x.reason === 'answer_url'))
+})
+
+test('没达到 perDay 时返回 shortfall/needMore', async () => {
+  const cur = await get('/api/zhihu-duty/config')
+  await post('/api/zhihu-duty/config', { ...cur.body.cfg, perDay: 5 })
+  const save = tools.find((t) => t.name === 'zhihu_report_save')
+  const r = await save.execute({
+    summary: '还差一条',
+    items: [{
+      title: '还差一条', url: 'https://www.zhihu.com/question/779/answer/780',
+      why: '补一条', author: '还差作者', tier: 'worth',
+    }],
+  })
+  assert.equal(r.saved, true)
+  assert.equal(r.picked, 4)
+  assert.equal(r.needMore, true)
+  assert.equal(r.shortfall, 1)
+  assert.match(r.hint, /还差 1 条/)
+})
+
+test('exhausted:true 后允许少于 perDay 并反映到状态', async () => {
+  const save = tools.find((t) => t.name === 'zhihu_report_save')
+  const r = await save.execute({ summary: '候选翻完了', items: [], exhausted: true })
+  assert.equal(r.saved, true)
+  assert.equal(r.needMore, false)
+  assert.equal(r.exhausted, true)
+  const s = await get('/api/zhihu-duty/status')
+  assert.equal(s.body.today.exhausted, true)
+  assert.equal(s.body.today.needMore, false)
+  assert.equal(s.body.today.shortfall, 1)
 })
 
 test('状态里带精确时间点模式和下一次', async () => {

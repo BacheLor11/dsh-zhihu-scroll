@@ -29,7 +29,7 @@ import {
 } from './lib/state.mjs'
 import {
   countPicked, itemKeyOf, listDays, mergeDay, questionKeyOf, readDay, readReport, recentPicked,
-  reportHistory, reportPath, writeReport,
+  reportHistory, reportPath, writeDay, writeReport,
 } from './lib/report.mjs'
 import { ZhihuClient, ZhihuError, describeError, webUrlOf } from './lib/zhihu.mjs'
 import { DOMAINS, QUALITY, SOURCES, labelOfDomain, labelOfSource, labelOfQuality } from './lib/domains.mjs'
@@ -490,12 +490,14 @@ export function apply(ctx) {
       + '每条必须带 title / url / why；quote 可选但必须原文；tier = must | worth | fun。\n'
       + '同问题下其他值得一起看的回答放进该条目的 related（最多 3 条），不要单独占主条目额度。\n'
       + '重复内容、30 天内出现过的问题、今天已经收过的同一作者会被跳过（skipped），不会写进文章；'
-      + 'kind=answer 必须给回答链接（含 /answer/{id}），kind=question 才是问题链接；回答只给问题链接会被拦下。'
+      + 'kind=answer 必须给回答链接（含 /answer/{id}），kind=question 才是问题链接；回答只给问题链接会被拦下。\n'
+      + 'perDay 是必须完成的条数：没满会返回 shortfall/needMore，继续刷；确实没有更多合格内容才传 exhausted:true。'
       + '一条都没挑到也要交空 items，并在 summary 里说明原因。',
     parameters: {
       type: 'object',
       properties: {
         summary: { type: 'string', description: '一句话总结这一轮（≤ 60 字）' },
+        exhausted: { type: 'boolean', description: '确实翻完候选且没有更多合格内容时传 true；只是没凑够条数不要传' },
         items: {
           type: 'array',
           items: {
@@ -596,11 +598,15 @@ export function apply(ctx) {
           items: kept,
           rounds: 1,
         })
+        data.exhausted = Boolean(args.exhausted)
+        writeDay(home, day, data)
         const wrote = writeReport(home, data, cfg.reportLevel)
         const fresh = data.items.slice(already)
         for (const it of fresh) if (it.id) markSeen(home, it.id, day)
         const overQuota = cfg.perDay > 0 ? Math.max(0, data.items.length - cfg.perDay) : 0
-        logger(`交报告：新增 ${added} 条${skipped.length ? `，跳过 ${skipped.length} 条重复` : ''}，今天共 ${data.items.length} 条${overQuota ? `（超每日目标 ${overQuota} 条）` : ''}${wrote.file ? `，已写 ${wrote.file}` : ''}`)
+        const shortfall = cfg.perDay > 0 ? Math.max(0, cfg.perDay - data.items.length) : 0
+        const needMore = shortfall > 0 && !data.exhausted
+        logger(`交报告：新增 ${added} 条${skipped.length ? `，跳过 ${skipped.length} 条重复` : ''}，今天共 ${data.items.length} 条${needMore ? `（还差 ${shortfall} 条）` : ''}${overQuota ? `（超每日目标 ${overQuota} 条）` : ''}${data.exhausted ? '（已标记 exhausted）' : ''}${wrote.file ? `，已写 ${wrote.file}` : ''}`)
         return {
           saved: true,
           added,
@@ -608,13 +614,20 @@ export function apply(ctx) {
           perDay: cfg.perDay,
           overQuota,
           skipped,
+          shortfall,
+          needMore,
+          exhausted: Boolean(data.exhausted),
           file: wrote.file || '',
           reportLevel: cfg.reportLevel,
-          hint: added === 0
-            ? '这次没有新增（可能都是今天挑过的）—— 如果是空 items，那就是如实交白卷。'
-            : (skipped.length
-              ? `已跳过 ${skipped.length} 条重复/同问题/同作者，只写入新的。`
-              : (overQuota > 0 ? '今天已超过每天目标；手动交的条目已增量写进月度文章。' : '')),
+          hint: needMore
+            ? `今天还差 ${shortfall} 条（${data.items.length}/${cfg.perDay}）。继续 zhihu_feed 翻页/读正文再交，不要收尾；确实翻完且没有合格内容，才传 exhausted:true 并说明。`
+            : (data.exhausted && shortfall > 0
+              ? `已标记 exhausted，今天停在 ${data.items.length}/${cfg.perDay} 条。`
+              : (added === 0
+                ? '这次没有新增（可能都是今天挑过的）—— 如果是空 items，那就是如实交白卷。'
+                : (skipped.length
+                  ? `已跳过 ${skipped.length} 条重复/同问题/同作者，只写入新的。`
+                  : (overQuota > 0 ? '今天已超过每天目标；手动交的条目已增量写进月度文章。' : '')))),
         }
       })
     },
@@ -660,7 +673,9 @@ export function apply(ctx) {
     const picked = readDay(home, day)?.items || []
     const lines = [
       `今天是 ${day}。按值班章程刷一轮知乎。`,
-      `每天最多 ${cfg.perDay} 条；候选目标 ${candidateTarget(cfg)} 条（至少 10×每天条数）。`,
+      cfg.perDay > 0
+        ? `每天必须完成 ${cfg.perDay} 条（不是“最多”，是硬目标）；候选目标 ${candidateTarget(cfg)} 条（至少 10×每天条数）。`
+        : `每天上限设成了 0（只手动）；候选目标 ${candidateTarget(cfg)} 条。`,
       `领域权重：${weightText(cfg.domains, labelOfDomain) || '没选（按中性判断）'}`,
       `来源权重：${weightText(cfg.sources, labelOfSource) || '没选（默认推荐流）'}`,
       `判断权重：${weightText(cfg.quality, labelOfQuality) || '没设（按中性判断）'}`,
@@ -671,7 +686,8 @@ export function apply(ctx) {
       picked.length
         ? `今天已经挑过（不要重复）：\n${picked.map((x, i) => `${i + 1}. ${x.title}`).join('\n')}`
         : '今天还没挑过。',
-      '现在开始：先调 zhihu_feed（不传 source，按权重捞），再逐条读正文。没合适的就用 page 翻页/换来源继续捞，不要放宽标准；最后调一次 zhihu_report_save。',
+      '现在开始：先调 zhihu_feed（不传 source，按权重捞），再逐条读正文。没合适的就用 page 翻页/换来源继续捞，不要放宽标准。',
+      'zhihu_report_save 可以分多次增量交；每次看返回的 shortfall/needMore，没到 perDay 就继续，不要 6 条收尾；确实没有合格内容才传 exhausted:true。',
     ]
     return lines.filter(Boolean).join('\n\n')
   }
@@ -740,7 +756,7 @@ export function apply(ctx) {
       // 后台 / 子 agent 的请求会 TRANSPORT。最可靠的做法是把任务投给当前主会话，
       // 由主 agent 执行（必要时它自己再派 subagent），插件只等日报落盘。
       if (parent) {
-        const startStamp = readDay(home, day)?.updatedAt || ''
+        let startStamp = readDay(home, day)?.updatedAt || ''
         const prompt = [
           '这是 dsh-zhihu-scroll 插件发来的值班任务，不用询问用户，直接执行。',
           '优先调用一次 subagent 工具，把下面「值班任务」原样交给子 agent；',
@@ -757,22 +773,41 @@ export function apply(ctx) {
         try {
           deliverToTarget(parent, prompt)
           logger(`定时任务已投递到「${sessionTitleOf(parent)}」（${parent.session.id}）`)
-          const deadline = Date.now() + 8 * 60_000
-          while (Date.now() < deadline) {
+          let deadline = Date.now() + 8 * 60_000
+          let nudges = 0
+          while (true) {
             if (parentRun?.cancelled) throw new Error('已取消（主会话里的任务可能还在跑）')
+            if (Date.now() >= deadline) {
+              const cur = readDay(home, day)
+              const picked = cur?.items?.length || 0
+              throw new Error(`定时对话超过 8 分钟没有交报告（当前 ${picked}/${cfg.perDay}）；去目标对话看它卡在哪。`)
+            }
             await new Promise((r) => setTimeout(r, 2000))
-            const stamp = readDay(home, day)?.updatedAt || ''
-            if (stamp && stamp !== startStamp) {
-              const added = Math.max(0, countPicked(home, day) - before)
-              lastRound = {
-                at: iso(), why, added, ms: Date.now() - startedAt, text: '（主会话完成）', ok: true,
-              }
-              writeState(home, { running: false, lastResult: lastRound, lastError: '' })
-              logger(`刷知乎这一轮完成（定时对话）：新增 ${added} 条，用时 ${Math.round((Date.now() - startedAt) / 1000)}s`)
-              return { ok: true, added, text: '', ms: Date.now() - startedAt }
+            const cur = readDay(home, day)
+            const stamp = cur?.updatedAt || ''
+            if (!stamp || stamp === startStamp) continue
+            const picked = cur?.items?.length || 0
+            const shortfall = cfg.perDay > 0 ? Math.max(0, cfg.perDay - picked) : 0
+            if (shortfall > 0 && !cur?.exhausted && nudges < 5) {
+              nudges++
+              startStamp = stamp
+              deadline = Date.now() + 8 * 60_000
+              logger(`定时对话只交了 ${picked}/${cfg.perDay}，补一条：还差 ${shortfall} 条`)
+              deliverToTarget(parent, `今天还差 ${shortfall} 条（当前 ${picked}/${cfg.perDay}）。继续从候选里挑，不要为了凑数放宽标准；候选不够就用 zhihu_feed 的 page 翻页/换来源，读完正文再交。确实翻完且没有合格内容，才在 zhihu_report_save 里传 exhausted:true 并说明。不要现在收尾。`)
+              continue
+            }
+            const added = Math.max(0, picked - before)
+            lastRound = {
+              at: iso(), why, added, shortfall, exhausted: Boolean(cur?.exhausted),
+              ms: Date.now() - startedAt, text: '（主会话完成）', ok: true,
+            }
+            writeState(home, { running: false, lastResult: lastRound, lastError: '' })
+            logger(`刷知乎这一轮完成（定时对话）：新增 ${added} 条${shortfall ? `，还差 ${shortfall} 条${cur?.exhausted ? '（exhausted）' : ''}` : ''}，用时 ${Math.round((Date.now() - startedAt) / 1000)}s`)
+            return {
+              ok: true, added, shortfall, exhausted: Boolean(cur?.exhausted),
+              text: '', ms: Date.now() - startedAt,
             }
           }
-          throw new Error('定时对话超过 8 分钟没有交报告；去目标对话看它卡在哪。')
         } finally {
           parentRun = null
         }
@@ -999,6 +1034,9 @@ export function apply(ctx) {
         day,
         picked: data?.items?.length || 0,
         perDay: cfg.perDay,
+        shortfall: cfg.perDay > 0 ? Math.max(0, cfg.perDay - (data?.items?.length || 0)) : 0,
+        needMore: cfg.perDay > 0 && (data?.items?.length || 0) < cfg.perDay && !data?.exhausted,
+        exhausted: Boolean(data?.exhausted),
         summary: data?.summary || '',
         lastRunAt: st.lastRunAt || '',
         lastWhy: st.lastWhy || '',
