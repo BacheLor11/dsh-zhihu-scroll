@@ -13,7 +13,7 @@
    DSH="/path/to/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
    "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll
    # 或
-   "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll-0.3.9.tgz
+   "$DSH" plugin --profile desktop add /绝对路径/dsh-zhihu-scroll-0.3.10.tgz
    ```
 
    - web profile 把 `desktop` 换成 `web`；
@@ -72,7 +72,7 @@
 - 定时支持精确时间点（`scheduleTimes`，HH:mm，最多 12 个）；留空才走旧的午间/夜间窗口；
 - 候选目标 `max(candidates, 10×perDay)`，上限 200；`zhihu_feed` 支持 `page`；
 - 去重：同内容（含 related）永久、同问题 30 天、同日同作者 1 条；`zhihu_report_save` 会跳过并返回 `skipped`；
-- 每条报告必须带 `basis`（firsthand/data/source/analysis/speculation）；`speculation`/无 basis 直接跳过；`must` 只给一手依据；
+- 每条报告必须带 `basis`（firsthand/data/source/analysis/opinion/speculation）；`speculation`/无 basis 直接跳过，并降低该作者权重；`must` 只给一手依据；
 - 回答必须用 `/answer/{id}` 链接；问题页 `answers[]` 带 `url`；回答只给问题链接会被拦下（`answer_url`）；
 - `perDay` 是必须完成的条数：`zhihu_report_save` 返回 `shortfall/needMore`；自动值班会追加「还差 N 条」，最多 5 次；只有 `exhausted:true` 才允许少于 perDay；
 - 工具参数 schema 只能使用 DSH 支持的 JSON Schema 子集：
@@ -80,7 +80,8 @@
   **别用** `minimum` / `maximum` / `maxItems`（宿主的 `assertSupportedJsonSchema` 会拒收，
   整条插件不激活），范围在描述里写、在 `execute` 里钳；
 - 值班 agent 只给 5 只只读工具，`tools.restrict({ allow })` 的白名单在 `index.js` 的 `DUTY_ALLOW`；
-- **不要加回任何写操作**（点赞/评论/关注/私信）——用户明确要求不做互动；
+- **不要加回任何写操作**（点赞/点踩/评论/关注/私信）——用户明确要求不做互动，点踩点赞由用户自己来；
+- 推测/无依据的作者会自动降权（`author-flags.json`，90 天滚动，-3/次，最多 -12）；只告诉用户，不询问/不引导点踩；
 - 任何写盘/日志都要自己 try/catch —— 插件出错只该「这一轮没跑成」，不该杀宿主；
 - 设置页接口只接受本机同源请求（`sameOriginOk`）；
 - 登录只保留传统 cURL / Cookie 导入；**不要加回扫码、短信、密码登录**。

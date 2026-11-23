@@ -24,8 +24,8 @@ import {
 } from './lib/config.mjs'
 import { dueTimePoint, nextTimePoint } from './lib/schedule.mjs'
 import {
-  authPath, charterPath, defaultHomeDir, dshHome, ensureCharter, ensureHome, homeDir, log,
-  markSeen, maskCookie, readAuth, readJson, readState, tailLog, writeAuth, writeHomeLocation, writeJson, writeState,
+  authPath, charterPath, defaultHomeDir, dshHome, ensureCharter, ensureHome, flagAuthor, homeDir, log,
+  markSeen, maskCookie, readAuth, readAuthorFlags, readJson, readState, tailLog, writeAuth, writeHomeLocation, writeJson, writeState,
 } from './lib/state.mjs'
 import {
   countPicked, itemKeyOf, listDays, mergeDay, questionKeyOf, readDay, readReport, recentPicked,
@@ -286,6 +286,7 @@ export function apply(ctx) {
     sourceLabel: it.source ? labelOfSource(it.source) : '',
     domains: Array.isArray(it.domains) ? it.domains.map((id) => labelOfDomain(id)) : [],
     score: it.score,
+    authorPenalty: it.authorPenalty || 0,
     fromCache: it.fromCache || false,
   })
 
@@ -492,7 +493,7 @@ export function apply(ctx) {
       + '重复内容、30 天内出现过的问题、今天已经收过的同一作者会被跳过（skipped），不会写进文章；'
       + 'kind=answer 必须给回答链接（含 /answer/{id}），kind=question 才是问题链接；回答只给问题链接会被拦下。\n'
       + 'perDay 是必须完成的条数：没满会返回 shortfall/needMore，继续刷；确实没有更多合格内容才传 exhausted:true。\n'
-      + 'basis 必填：firsthand/data/source/analysis 才算有依据；speculation（听说/大概/别人说/未证实）会被直接跳过，不要交。'
+      + 'basis 必填：firsthand/data/source/analysis/opinion 才算有依据；speculation（听说/大概/别人说/未证实）会被直接跳过，并降低该作者在候选里的权重；不同观点请标 opinion，不要捏造事实。'
       + '一条都没挑到也要交空 items，并在 summary 里说明原因。',
     parameters: {
       type: 'object',
@@ -516,7 +517,7 @@ export function apply(ctx) {
               why: { type: 'string' },
               basis: {
                 type: 'string',
-                enum: ['firsthand', 'data', 'source', 'analysis', 'speculation'],
+                enum: ['firsthand', 'data', 'source', 'analysis', 'opinion', 'speculation'],
                 description: '主论断依据：firsthand=作者亲历/实测；data=原文数据/计算；source=可核引用；analysis=基于文中已给事实的分析；speculation=主要是听说/大概/别人说/未证实（不要交）',
               },
               quote: { type: 'string' },
@@ -553,14 +554,27 @@ export function apply(ctx) {
         const rawItems = Array.isArray(args.items) ? args.items : []
         const skipped = []
         const prepared = []
+        const penalized = []
         for (const raw of rawItems) {
           const c = canonicalReportItem(raw)
           const title = String(raw?.title || '').trim()
-          if (c.reason) { skipped.push({ title, reason: c.reason }); continue }
+          const author = String(raw?.author || '').trim()
+          const url = String(c.item?.url || raw?.url || '').trim()
+          if (c.reason) { skipped.push({ title, url, author, reason: c.reason }); continue }
           const basis = String(raw?.basis || '')
-          if (!basis) { skipped.push({ title, reason: 'unverified' }); continue }
-          if (basis === 'speculation') { skipped.push({ title, reason: 'speculation' }); continue }
-          if (c.item.tier === 'must' && basis === 'analysis') c.item.tier = 'worth'
+          if (!basis) {
+            skipped.push({ title, url, author, reason: 'unverified' })
+            const p = flagAuthor(home, author, { title, url, reason: 'unverified' })
+            if (p) penalized.push(p)
+            continue
+          }
+          if (basis === 'speculation') {
+            skipped.push({ title, url, author, reason: 'speculation' })
+            const p = flagAuthor(home, author, { title, url, reason: 'speculation' })
+            if (p) penalized.push(p)
+            continue
+          }
+          if (c.item.tier === 'must' && (basis === 'analysis' || basis === 'opinion')) c.item.tier = 'worth'
           prepared.push(c.item)
         }
         const history = reportHistory(home, day)
@@ -597,8 +611,10 @@ export function apply(ctx) {
             picked: already,
             perDay: cfg.perDay,
             skipped,
+            penalizedAuthors: penalized,
+            flaggedAuthors: penalized.map((p) => p.author),
             hint: invalid
-              ? '有内容不合格（推测/听说/无依据，或缺回答链接），已跳过；换有依据的内容，或交空 items + exhausted:true 说明，不要拿它们凑 perDay。'
+              ? `有内容不合格（推测/听说/无依据，或缺回答链接），已跳过${penalized.length ? `；已降低 ${penalized.map((p) => `${p.author}（-${p.penalty}）`).join('、')} 的权重，点踩你自己决定` : ''}；换有依据的内容，或交空 items + exhausted:true 说明，不要拿它们凑 perDay。`
               : '全是重复内容/同问题/同日同作者，已全部跳过；换内容或用 page 继续翻，不要降标准。',
           }
         }
@@ -627,19 +643,21 @@ export function apply(ctx) {
           perDay: cfg.perDay,
           overQuota,
           skipped,
+          penalizedAuthors: penalized,
+          flaggedAuthors: penalized.map((p) => p.author),
           shortfall,
           needMore,
           exhausted: Boolean(data.exhausted),
           file: wrote.file || '',
           reportLevel: cfg.reportLevel,
           hint: needMore
-            ? `今天还差 ${shortfall} 条（${data.items.length}/${cfg.perDay}）。继续找有依据的内容再交，不要收尾；${specSkip ? `有 ${specSkip} 条推测/无依据已跳过，别拿它们凑数；` : ''}确实翻完且没有合格内容，才传 exhausted:true 并说明。`
+            ? `今天还差 ${shortfall} 条（${data.items.length}/${cfg.perDay}）。继续找有依据的内容再交，不要收尾；${specSkip ? `有 ${specSkip} 条推测/无依据已跳过，${penalized.length ? `已降低 ${penalized.map((p) => `${p.author}（-${p.penalty}）`).join('、')} 的权重；` : ''}别拿它们凑数；` : ''}确实翻完且没有合格内容，才传 exhausted:true 并说明。`
             : (data.exhausted && shortfall > 0
-              ? `已标记 exhausted，今天停在 ${data.items.length}/${cfg.perDay} 条${specSkip ? `（跳过 ${specSkip} 条推测/无依据）` : ''}。`
+              ? `已标记 exhausted，今天停在 ${data.items.length}/${cfg.perDay} 条${specSkip ? `（跳过 ${specSkip} 条推测/无依据${penalized.length ? `；已降低 ${penalized.map((p) => `${p.author}（-${p.penalty}）`).join('、')} 的权重` : ''}）` : ''}。`
               : (added === 0
                 ? '这次没有新增（可能都是今天挑过的）—— 如果是空 items，那就是如实交白卷。'
                 : (specSkip
-                  ? `已写入；跳过 ${specSkip} 条推测/无依据。`
+                  ? `已写入；跳过 ${specSkip} 条推测/无依据${penalized.length ? `，已降低 ${penalized.map((p) => `${p.author}（-${p.penalty}）`).join('、')} 的权重` : ''}。`
                   : (dupSkip
                     ? `已跳过 ${dupSkip} 条重复/同问题/同作者，只写入新的。`
                     : (overQuota > 0 ? '今天已超过每天目标；手动交的条目已增量写进月度文章。' : ''))))),
@@ -702,8 +720,9 @@ export function apply(ctx) {
         ? `今天已经挑过（不要重复）：\n${picked.map((x, i) => `${i + 1}. ${x.title}`).join('\n')}`
         : '今天还没挑过。',
       '现在开始：先调 zhihu_feed（不传 source，按权重捞），再逐条读正文。没合适的就用 page 翻页/换来源继续捞，不要放宽标准。',
-      '先核查后选：每条都要指出原文里的依据（作者实测/数据/可核引用/基于文中事实的分析），basis 必填；只有“大概/听说/别人说/我认为/还没看到”的按 speculation 处理，直接不交；技术数字没有账本也不收。',
+      '先核查后选：每条都要指出原文里的依据（作者实测/数据/可核引用/基于文中事实的分析/观点），basis 必填；不同观点标 opinion 可以收，但不能捏造事实；只有“大概/听说/别人说/还没看到”的按 speculation 处理，直接不交，并会自动降低该作者权重；技术数字没有账本也不收。',
       'zhihu_report_save 可以分多次增量交；每次看返回的 shortfall/needMore，没到 perDay 就继续，不要 6 条收尾；确实没有合格内容才传 exhausted:true。',
+      '如果跳过了 speculation/unverified，最终回复要告诉用户：作者、原因、作者权重已降低；不要问是否点踩、不要代点踩、不要引导互动。',
     ]
     return lines.filter(Boolean).join('\n\n')
   }
@@ -1054,6 +1073,7 @@ export function apply(ctx) {
         needMore: cfg.perDay > 0 && (data?.items?.length || 0) < cfg.perDay && !data?.exhausted,
         exhausted: Boolean(data?.exhausted),
         summary: data?.summary || '',
+        authorFlags: Object.keys(readAuthorFlags(home)).length,
         lastRunAt: st.lastRunAt || '',
         lastWhy: st.lastWhy || '',
         lastError: st.lastError || '',

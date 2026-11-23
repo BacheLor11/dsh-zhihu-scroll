@@ -4,6 +4,9 @@ import http from 'node:http'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { dayKey } from '../lib/config.mjs'
+import { readDay } from '../lib/report.mjs'
+import { authorFlagPenalty, readAuthorFlags } from '../lib/state.mjs'
 
 const home = mkdtempSync(join(tmpdir(), 'zhihu-host-'))
 let zhihuServer
@@ -116,7 +119,7 @@ test('status 初始形状', async () => {
   const { status, body } = await get('/api/zhihu-duty/status')
   assert.equal(status, 200)
   assert.equal(body.ok, true)
-  assert.equal(body.version, '0.3.9')
+  assert.equal(body.version, '0.3.10')
   assert.equal(body.cfg.perDay, 3)
   assert.equal(body.cfg.domains.ai, 4)
   assert.equal(body.cfg.sources.following, 4)
@@ -412,7 +415,31 @@ test('通篇推测/听说会被跳过', async () => {
   })
   assert.equal(r.saved, false)
   assert.equal(r.blocked, 'invalid')
-  assert.ok(r.skipped.some((x) => x.reason === 'speculation'))
+  assert.ok(r.skipped.some((x) => x.reason === 'speculation' && x.author === '推测作者'))
+  assert.ok(r.skipped.some((x) => x.reason === 'speculation' && /answer\/782/.test(x.url)))
+  assert.ok(r.penalizedAuthors.some((x) => x.author === '推测作者' && x.penalty === 3))
+  assert.equal(authorFlagPenalty(home, '推测作者'), 3)
+  const s = await get('/api/zhihu-duty/status')
+  assert.equal(s.body.today.authorFlags, 1)
+})
+
+test('不同观点标 opinion 可以收，must 降为 worth', async () => {
+  const save = tools.find((t) => t.name === 'zhihu_report_save')
+  const r = await save.execute({
+    summary: '一个不同观点',
+    items: [{
+      title: '一个不同观点', url: 'https://www.zhihu.com/question/902/answer/903',
+      id: '903', questionId: '902', kind: 'answer', why: '作者的价值判断',
+      basis: 'opinion', tier: 'must', author: '观点作者',
+    }],
+  })
+  assert.equal(r.saved, true)
+  const d = readDay(home, dayKey())
+  const it = d.items.find((x) => x.id === '903')
+  assert.equal(it.tier, 'worth')
+  assert.equal(it.basis, 'opinion')
+  const rep = await get('/api/zhihu-duty/report')
+  assert.match(rep.body.text, /依据：作者观点/)
 })
 
 test('状态里带精确时间点模式和下一次', async () => {

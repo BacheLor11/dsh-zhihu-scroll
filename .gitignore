@@ -8,6 +8,7 @@ node_modules/
 .DS_Store
 .env
 auth.json
+author-flags.json
 config.json
 state.json
 items.json

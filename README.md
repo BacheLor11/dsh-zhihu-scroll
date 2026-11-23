@@ -77,7 +77,7 @@ dsh plugin --profile desktop add <本仓库路径>
 ### 从 tgz 装（推荐分发用）
 
 ```bash
-dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.9.tgz
+dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.10.tgz
 ```
 
 装完**重启一次 DSH**（bundle 层要重启才组装）。然后进 **设置 → 刷知乎**。
@@ -214,10 +214,13 @@ out/大肥鱼带你刷知乎2026年10月.md
 
 ## 内容核查
 
-- 每条报告必须带 `basis`：`firsthand`（亲历/实测）、`data`（原文数据/计算）、`source`（可核引用）、`analysis`（基于文中事实的推理）、`speculation`（听说/大概/别人说/未证实）；
+- 每条报告必须带 `basis`：`firsthand`（亲历/实测）、`data`（原文数据/计算）、`source`（可核引用）、`analysis`（基于文中事实的推理）、`opinion`（作者明确观点）、`speculation`（听说/大概/别人说/未证实）；
 - `speculation` 和没有 `basis` 的条目会被 `zhihu_report_save` 直接跳过；
-- `must` 只给 `firsthand` / `data` / `source`；`analysis` 最多 `worth`；
+- `must` 只给 `firsthand` / `data` / `source`；`analysis` / `opinion` 最多 `worth`；
 - 报告里会显示「依据：亲历/实测、数据/计算、引用来源、基于文中事实的分析」；
+- 推测/无依据的内容不收，并自动降低该作者在候选里的权重（90 天滚动，单次 -3，最多 -12），在回复里告诉你；
+- 不同观点可以收，但标 `opinion`，不能捏造；
+- **不提供点赞/点踩/评论/关注/私信**；点踩点赞你自己来；
 - 通篇推测/二手转述的内容不收；宁可空 items + `exhausted`，也不拿它凑 `perDay`。
 
 ## 每天必须刷满
@@ -316,7 +319,7 @@ NODE="/path/to/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"
 ELECTRON_RUN_AS_NODE=1 "$NODE" --expose-internals --test test/*.test.mjs
 ```
 
-测试覆盖：71 个用例 —— Cookie 解析、HTML→文本、领域/权重、月度文章合并/渲染、精确时间点调度、
+测试覆盖：73 个用例 —— Cookie 解析、HTML→文本、领域/权重、月度文章合并/渲染、精确时间点调度、
 同问题关联回答、知乎客户端（本地 mock 服务）、宿主工具与 HTTP 接口、数据目录指针/切换。
 
 临时实例（不碰你的 `~/.dsh`）：
@@ -324,7 +327,7 @@ ELECTRON_RUN_AS_NODE=1 "$NODE" --expose-internals --test test/*.test.mjs
 ```bash
 export DSH_HOME="$PWD/.dsh-test"
 dsh --profile web --dump-config
-dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.9.tgz"
+dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.10.tgz"
 dsh web --port 0 --no-open
 ```
 
