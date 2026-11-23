@@ -77,7 +77,7 @@ dsh plugin --profile desktop add <本仓库路径>
 ### 从 tgz 装（推荐分发用）
 
 ```bash
-dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.8.tgz
+dsh plugin --profile desktop add ./dsh-zhihu-scroll-0.3.9.tgz
 ```
 
 装完**重启一次 DSH**（bundle 层要重启才组装）。然后进 **设置 → 刷知乎**。
@@ -212,6 +212,14 @@ out/大肥鱼带你刷知乎2026年10月.md
 - 只给问题链接、又没有回答 id 的「回答」会被 `zhihu_report_save` 拦下（`answer_url`），不会写成问题链接；
 - 问题本身才用 `kind: question`；报告里的作者标签对应为「提问者 / 答主 / 作者」。
 
+## 内容核查
+
+- 每条报告必须带 `basis`：`firsthand`（亲历/实测）、`data`（原文数据/计算）、`source`（可核引用）、`analysis`（基于文中事实的推理）、`speculation`（听说/大概/别人说/未证实）；
+- `speculation` 和没有 `basis` 的条目会被 `zhihu_report_save` 直接跳过；
+- `must` 只给 `firsthand` / `data` / `source`；`analysis` 最多 `worth`；
+- 报告里会显示「依据：亲历/实测、数据/计算、引用来源、基于文中事实的分析」；
+- 通篇推测/二手转述的内容不收；宁可空 items + `exhausted`，也不拿它凑 `perDay`。
+
 ## 每天必须刷满
 
 - `perDay` 是**必须完成的条数**，不是最多：10 条就交 10 条，不能 6 条收尾；
@@ -308,7 +316,7 @@ NODE="/path/to/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"
 ELECTRON_RUN_AS_NODE=1 "$NODE" --expose-internals --test test/*.test.mjs
 ```
 
-测试覆盖：70 个用例 —— Cookie 解析、HTML→文本、领域/权重、月度文章合并/渲染、精确时间点调度、
+测试覆盖：71 个用例 —— Cookie 解析、HTML→文本、领域/权重、月度文章合并/渲染、精确时间点调度、
 同问题关联回答、知乎客户端（本地 mock 服务）、宿主工具与 HTTP 接口、数据目录指针/切换。
 
 临时实例（不碰你的 `~/.dsh`）：
@@ -316,7 +324,7 @@ ELECTRON_RUN_AS_NODE=1 "$NODE" --expose-internals --test test/*.test.mjs
 ```bash
 export DSH_HOME="$PWD/.dsh-test"
 dsh --profile web --dump-config
-dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.8.tgz"
+dsh plugin --profile web add "$PWD/dsh-zhihu-scroll-0.3.9.tgz"
 dsh web --port 0 --no-open
 ```
 

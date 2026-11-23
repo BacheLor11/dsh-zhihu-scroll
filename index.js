@@ -491,7 +491,8 @@ export function apply(ctx) {
       + '同问题下其他值得一起看的回答放进该条目的 related（最多 3 条），不要单独占主条目额度。\n'
       + '重复内容、30 天内出现过的问题、今天已经收过的同一作者会被跳过（skipped），不会写进文章；'
       + 'kind=answer 必须给回答链接（含 /answer/{id}），kind=question 才是问题链接；回答只给问题链接会被拦下。\n'
-      + 'perDay 是必须完成的条数：没满会返回 shortfall/needMore，继续刷；确实没有更多合格内容才传 exhausted:true。'
+      + 'perDay 是必须完成的条数：没满会返回 shortfall/needMore，继续刷；确实没有更多合格内容才传 exhausted:true。\n'
+      + 'basis 必填：firsthand/data/source/analysis 才算有依据；speculation（听说/大概/别人说/未证实）会被直接跳过，不要交。'
       + '一条都没挑到也要交空 items，并在 summary 里说明原因。',
     parameters: {
       type: 'object',
@@ -513,6 +514,11 @@ export function apply(ctx) {
               comments: { type: 'number' },
               tier: { type: 'string', enum: ['must', 'worth', 'fun'] },
               why: { type: 'string' },
+              basis: {
+                type: 'string',
+                enum: ['firsthand', 'data', 'source', 'analysis', 'speculation'],
+                description: '主论断依据：firsthand=作者亲历/实测；data=原文数据/计算；source=可核引用；analysis=基于文中已给事实的分析；speculation=主要是听说/大概/别人说/未证实（不要交）',
+              },
               quote: { type: 'string' },
               related: {
                 type: 'array',
@@ -531,7 +537,7 @@ export function apply(ctx) {
                 },
               },
             },
-            required: ['title', 'url', 'why'],
+            required: ['title', 'url', 'why', 'basis'],
             additionalProperties: true,
           },
         },
@@ -549,8 +555,13 @@ export function apply(ctx) {
         const prepared = []
         for (const raw of rawItems) {
           const c = canonicalReportItem(raw)
-          if (c.reason) skipped.push({ title: String(raw?.title || '').trim(), reason: c.reason })
-          else prepared.push(c.item)
+          const title = String(raw?.title || '').trim()
+          if (c.reason) { skipped.push({ title, reason: c.reason }); continue }
+          const basis = String(raw?.basis || '')
+          if (!basis) { skipped.push({ title, reason: 'unverified' }); continue }
+          if (basis === 'speculation') { skipped.push({ title, reason: 'speculation' }); continue }
+          if (c.item.tier === 'must' && basis === 'analysis') c.item.tier = 'worth'
+          prepared.push(c.item)
         }
         const history = reportHistory(home, day)
         const seen = new Set(history.allKeys)
@@ -578,7 +589,7 @@ export function apply(ctx) {
           if (author) authors.add(author)
         }
         if (rawItems.length > 0 && kept.length === 0) {
-          const invalid = skipped.some((x) => x.reason === 'answer_url' || x.reason === 'invalid')
+          const invalid = skipped.some((x) => ['answer_url', 'invalid', 'speculation', 'unverified'].includes(x.reason))
           return {
             saved: false,
             blocked: invalid ? 'invalid' : 'duplicates',
@@ -587,7 +598,7 @@ export function apply(ctx) {
             perDay: cfg.perDay,
             skipped,
             hint: invalid
-              ? '有回答没带回答链接（只有问题链接又没有回答 id），已跳过；用 zhihu_item 的 answers[].url 重新交，或改用 kind=question 交问题本身。'
+              ? '有内容不合格（推测/听说/无依据，或缺回答链接），已跳过；换有依据的内容，或交空 items + exhausted:true 说明，不要拿它们凑 perDay。'
               : '全是重复内容/同问题/同日同作者，已全部跳过；换内容或用 page 继续翻，不要降标准。',
           }
         }
@@ -606,7 +617,9 @@ export function apply(ctx) {
         const overQuota = cfg.perDay > 0 ? Math.max(0, data.items.length - cfg.perDay) : 0
         const shortfall = cfg.perDay > 0 ? Math.max(0, cfg.perDay - data.items.length) : 0
         const needMore = shortfall > 0 && !data.exhausted
-        logger(`交报告：新增 ${added} 条${skipped.length ? `，跳过 ${skipped.length} 条重复` : ''}，今天共 ${data.items.length} 条${needMore ? `（还差 ${shortfall} 条）` : ''}${overQuota ? `（超每日目标 ${overQuota} 条）` : ''}${data.exhausted ? '（已标记 exhausted）' : ''}${wrote.file ? `，已写 ${wrote.file}` : ''}`)
+        const specSkip = skipped.filter((x) => x.reason === 'speculation' || x.reason === 'unverified').length
+        const dupSkip = skipped.filter((x) => ['repeat', 'question', 'author'].includes(x.reason)).length
+        logger(`交报告：新增 ${added} 条${skipped.length ? `，跳过 ${skipped.length} 条` : ''}，今天共 ${data.items.length} 条${needMore ? `（还差 ${shortfall} 条）` : ''}${specSkip ? `（其中 ${specSkip} 条推测/无依据）` : ''}${overQuota ? `（超每日目标 ${overQuota} 条）` : ''}${data.exhausted ? '（已标记 exhausted）' : ''}${wrote.file ? `，已写 ${wrote.file}` : ''}`)
         return {
           saved: true,
           added,
@@ -620,14 +633,16 @@ export function apply(ctx) {
           file: wrote.file || '',
           reportLevel: cfg.reportLevel,
           hint: needMore
-            ? `今天还差 ${shortfall} 条（${data.items.length}/${cfg.perDay}）。继续 zhihu_feed 翻页/读正文再交，不要收尾；确实翻完且没有合格内容，才传 exhausted:true 并说明。`
+            ? `今天还差 ${shortfall} 条（${data.items.length}/${cfg.perDay}）。继续找有依据的内容再交，不要收尾；${specSkip ? `有 ${specSkip} 条推测/无依据已跳过，别拿它们凑数；` : ''}确实翻完且没有合格内容，才传 exhausted:true 并说明。`
             : (data.exhausted && shortfall > 0
-              ? `已标记 exhausted，今天停在 ${data.items.length}/${cfg.perDay} 条。`
+              ? `已标记 exhausted，今天停在 ${data.items.length}/${cfg.perDay} 条${specSkip ? `（跳过 ${specSkip} 条推测/无依据）` : ''}。`
               : (added === 0
                 ? '这次没有新增（可能都是今天挑过的）—— 如果是空 items，那就是如实交白卷。'
-                : (skipped.length
-                  ? `已跳过 ${skipped.length} 条重复/同问题/同作者，只写入新的。`
-                  : (overQuota > 0 ? '今天已超过每天目标；手动交的条目已增量写进月度文章。' : '')))),
+                : (specSkip
+                  ? `已写入；跳过 ${specSkip} 条推测/无依据。`
+                  : (dupSkip
+                    ? `已跳过 ${dupSkip} 条重复/同问题/同作者，只写入新的。`
+                    : (overQuota > 0 ? '今天已超过每天目标；手动交的条目已增量写进月度文章。' : ''))))),
         }
       })
     },
@@ -687,6 +702,7 @@ export function apply(ctx) {
         ? `今天已经挑过（不要重复）：\n${picked.map((x, i) => `${i + 1}. ${x.title}`).join('\n')}`
         : '今天还没挑过。',
       '现在开始：先调 zhihu_feed（不传 source，按权重捞），再逐条读正文。没合适的就用 page 翻页/换来源继续捞，不要放宽标准。',
+      '先核查后选：每条都要指出原文里的依据（作者实测/数据/可核引用/基于文中事实的分析），basis 必填；只有“大概/听说/别人说/我认为/还没看到”的按 speculation 处理，直接不交；技术数字没有账本也不收。',
       'zhihu_report_save 可以分多次增量交；每次看返回的 shortfall/needMore，没到 perDay 就继续，不要 6 条收尾；确实没有合格内容才传 exhausted:true。',
     ]
     return lines.filter(Boolean).join('\n\n')

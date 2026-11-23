@@ -116,7 +116,7 @@ test('status 初始形状', async () => {
   const { status, body } = await get('/api/zhihu-duty/status')
   assert.equal(status, 200)
   assert.equal(body.ok, true)
-  assert.equal(body.version, '0.3.8')
+  assert.equal(body.version, '0.3.9')
   assert.equal(body.cfg.perDay, 3)
   assert.equal(body.cfg.domains.ai, 4)
   assert.equal(body.cfg.sources.following, 4)
@@ -196,6 +196,7 @@ test('报告工具落盘、计数、卡片墙', async () => {
       votes: 1200,
       comments: 30,
       tier: 'must',
+      basis: 'data',
       why: '有数据、有一手经历',
       quote: '原文一句',
       related: [{ title: '同问题另一条', url: 'https://www.zhihu.com/question/1/answer/3', author: '李四', votes: 8, why: '补了数据' }],
@@ -293,7 +294,7 @@ test('数据目录可以手动切换，旧数据复制过去', async () => {
 
 test('同一来源重复交不会重复计数', async () => {
   const save = tools.find((t) => t.name === 'zhihu_report_save')
-  const item = { title: '一条值得读的回答', url: 'https://www.zhihu.com/question/1/answer/2', why: '重复', tier: 'must' }
+  const item = { title: '一条值得读的回答', url: 'https://www.zhihu.com/question/1/answer/2', why: '重复', basis: 'data', tier: 'must' }
   const r = await save.execute({ summary: '重复交', items: [item] })
   assert.equal(r.saved, false)
   assert.equal(r.blocked, 'duplicates')
@@ -306,7 +307,7 @@ test('同问题不同回答、同日同作者都会被跳过', async () => {
   const save = tools.find((t) => t.name === 'zhihu_report_save')
   const sameQ = await save.execute({
     summary: '同问题另一条',
-    items: [{ title: '同问题另一条回答', url: 'https://www.zhihu.com/question/1/answer/3', why: '重复问题', author: '李四' }],
+    items: [{ title: '同问题另一条回答', url: 'https://www.zhihu.com/question/1/answer/3', why: '重复问题', basis: 'data', author: '李四' }],
   })
   assert.equal(sameQ.saved, false)
   assert.equal(sameQ.blocked, 'duplicates')
@@ -314,7 +315,7 @@ test('同问题不同回答、同日同作者都会被跳过', async () => {
 
   const sameA = await save.execute({
     summary: '同作者',
-    items: [{ title: '同作者另一条', url: 'https://www.zhihu.com/question/2/answer/4', why: '重复作者', author: '张三' }],
+    items: [{ title: '同作者另一条', url: 'https://www.zhihu.com/question/2/answer/4', why: '重复作者', basis: 'data', author: '张三' }],
   })
   assert.equal(sameA.saved, false)
   assert.ok(sameA.skipped.some((x) => x.reason === 'author'))
@@ -330,6 +331,7 @@ test('每天额度满了，手动再交仍然增量写进月度文章', async ()
       title: '超额的一条',
       url: 'https://www.zhihu.com/question/9/answer/99',
       why: '手动补的',
+      basis: 'data',
       tier: 'worth',
     }],
   })
@@ -346,7 +348,7 @@ test('回答只用问题链接时自动补成回答链接', async () => {
     summary: '补回答链接',
     items: [{
       title: '补回答链接', url: 'https://www.zhihu.com/question/777',
-      id: '888', kind: 'answer', why: '回答', author: '补链接作者',
+      id: '888', kind: 'answer', why: '回答', basis: 'data', author: '补链接作者',
     }],
   })
   assert.equal(r.saved, true)
@@ -361,7 +363,7 @@ test('回答只有问题链接且没有回答 id 会被拦下', async () => {
     summary: '缺回答链接',
     items: [{
       title: '缺回答链接', url: 'https://www.zhihu.com/question/778',
-      id: '778', kind: 'answer', why: '没有回答 id', author: '缺链接作者',
+      id: '778', kind: 'answer', why: '没有回答 id', basis: 'data', author: '缺链接作者',
     }],
   })
   assert.equal(r.saved, false)
@@ -377,7 +379,7 @@ test('没达到 perDay 时返回 shortfall/needMore', async () => {
     summary: '还差一条',
     items: [{
       title: '还差一条', url: 'https://www.zhihu.com/question/779/answer/780',
-      why: '补一条', author: '还差作者', tier: 'worth',
+      why: '补一条', basis: 'data', author: '还差作者', tier: 'worth',
     }],
   })
   assert.equal(r.saved, true)
@@ -397,6 +399,20 @@ test('exhausted:true 后允许少于 perDay 并反映到状态', async () => {
   assert.equal(s.body.today.exhausted, true)
   assert.equal(s.body.today.needMore, false)
   assert.equal(s.body.today.shortfall, 1)
+})
+
+test('通篇推测/听说会被跳过', async () => {
+  const save = tools.find((t) => t.name === 'zhihu_report_save')
+  const r = await save.execute({
+    summary: '全是推测',
+    items: [{
+      title: '一位业内人士说', url: 'https://www.zhihu.com/question/781/answer/782',
+      id: '782', kind: 'answer', why: '业内人士说+大概是', basis: 'speculation', author: '推测作者',
+    }],
+  })
+  assert.equal(r.saved, false)
+  assert.equal(r.blocked, 'invalid')
+  assert.ok(r.skipped.some((x) => x.reason === 'speculation'))
 })
 
 test('状态里带精确时间点模式和下一次', async () => {
